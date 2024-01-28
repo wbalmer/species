@@ -3536,7 +3536,7 @@ class AtmosphericRetrieval:
         radtrans_dict["parallax"] = self.parallax
         radtrans_dict["scattering"] = self.scattering
         radtrans_dict["chemistry"] = chemistry
-        radtrans_dict["self.quenching"] = self.quenching
+        radtrans_dict["quenching"] = self.quenching
         radtrans_dict["pt_profile"] = pt_profile
         radtrans_dict["pressure_grid"] = self.pressure_grid
         radtrans_dict["wavel_range"] = self.wavel_range
@@ -3568,7 +3568,7 @@ class AtmosphericRetrieval:
         #                         sample='rslice', # TODO: make variable
         #                         )
 
-        self.fileprefix = os.getcwd() # TODO:
+        self.fileprefix = os.getcwd()+'/' # TODO:
 
         if not mpi_pool:
             with dynesty.pool.Pool(npool, self.loglike_func, self.prior_func) as pool:
@@ -3677,11 +3677,18 @@ class AtmosphericRetrieval:
 
         from dynesty import plotting as dyplot
 
-        fg, ax = dyplot.cornerplot(results, color='cornflowerblue', 
-                                   show_titles=True,
-                                   max_n_ticks=3, quantiles=None,
-                                )
-        plt.show()
+        # fg, ax = dyplot.cornerplot(results, color='cornflowerblue', 
+        #                            show_titles=True,
+        #                            max_n_ticks=3, quantiles=None,
+        #                         )
+        # plt.show()
+
+        new_samples = results.samples_equal()
+
+        new_samples_filename = out_basename+'post_equal_weights.dat'
+
+        np.savetxt(new_samples_filename, np.c_[new_samples, results.logl])
+
 
         # pymultinest.run(
         #     loglike_func,

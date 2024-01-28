@@ -551,6 +551,15 @@ class AtmosphericRetrieval:
             self.parameters.append("log_delta")
             self.parameters.append("tint")
 
+        if self.pt_profile == "gradient":
+            self.parameters.append("T_bottom")
+            self.parameters.append("PTslope_1")
+            self.parameters.append("PTslope_2")
+            self.parameters.append("PTslope_3")
+            self.parameters.append("PTslope_4")
+            self.parameters.append("PTslope_5")
+            self.parameters.append("PTslope_6")
+
         # Abundance parameters
 
         if self.chemistry == "equilibrium":
@@ -955,6 +964,31 @@ class AtmosphericRetrieval:
             for i in range(self.temp_nodes):
                 # Default: 0 - 8000 K
                 cube[self.cube_index[f"t{i}"]] = 20000.0 * cube[self.cube_index[f"t{i}"]]
+
+        elif self.pt_profile == "gradient":
+            # Temperature at 1000 Bar
+            if "T_bottom" in self.bounds:
+                tbottom = (
+                    self.bounds["T_bottom"][0]
+                    + (self.bounds["T_bottom"][1] - self.bounds["T_bottom"][0])
+                    * cube[self.cube_index["T_bottom"]]
+                )
+            else:
+                # Default: 2000 - 12000 K
+                tbottom = 2000.0 + 10000.0 * cube[self.cube_index["T_bottom"]]
+            cube[self.cube_index["T_bottom"]] = tbottom
+
+            for i in range(1,7): # TODO: could make n_layers a parameter later
+                if "PTslope_"+str(i) in self.bounds:
+                    t_i = (
+                        self.bounds["PTslope_"+str(i)][0]
+                        + (self.bounds["PTslope_"+str(i)][1] - self.bounds["PTslope_"+str(i)][0])
+                        * cube[self.cube_index["PTslope_"+str(i)]]
+                    )
+                    print(t_i)
+                else:
+                    t_i = 0.0 + 1.0 * cube[self.cube_index["T_bottom"]]
+                cube[self.cube_index["PTslope_"+str(i)]] = t_i
 
         elif self.pt_profile == "monotonic":
             # Free temperature node (K) between 300 and
@@ -3073,7 +3107,7 @@ class AtmosphericRetrieval:
             applied if the argument is set to ``None``.
         pt_profile : str
             The parametrization for the pressure-temperature profile
-            ('molliere', 'free', 'monotonic', 'eddington').
+            ('molliere', 'free', 'monotonic', 'eddington', 'gradient').
         fit_corr : list(str), None
             List with spectrum names for which the correlation lengths
             and fractional amplitudes are fitted (see `Wang et al. 2020
@@ -3172,6 +3206,19 @@ class AtmosphericRetrieval:
         """
 
         self.prior = prior
+
+        # set default gradient priors if applicable
+        default_grad_priors = {'1':(0.25,0.025),'2':(0.25,0.045),'3':(0.26,0.05),
+                               '4':(0.2,0.05),'5':(0.12,0.045),'6':(0.07,0.07)}
+
+        if pt_profile == "gradient":
+            if self.prior is None:
+                self.prior = {}
+            print('setting dlnP/dlnT priors')
+            for i in range(1,7):
+                if "PTslope_"+str(i) not in self.prior.keys():
+                    self.prior["PTslope_"+str(i)] = default_grad_priors[str(i)]
+                    print(self.prior["PTslope_"+str(i)])
 
         self.bounds = bounds
 

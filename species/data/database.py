@@ -3192,7 +3192,7 @@ class Database:
             hdf5_file.create_dataset(f"results/fit/{tag}/ln_prob", data=samples[:, -1])
 
             # Remove the column with the log-likelihood value
-            samples = samples[:, :-1] TODO:
+            samples = samples[:, :-1]
 
             if samples.shape[1] != len(parameters):
                 print(samples.shape[1])

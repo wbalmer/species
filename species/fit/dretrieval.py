@@ -987,7 +987,7 @@ class AtmosphericRetrieval:
                     )
                     print(t_i)
                 else:
-                    t_i = 0.0 + 1.0 * cube[self.cube_index["T_bottom"]]
+                    t_i = 0.0 + 1.0 * cube[self.cube_index["PTslope_"+str(i)]]
                 cube[self.cube_index["PTslope_"+str(i)]] = t_i
 
         elif self.pt_profile == "monotonic":

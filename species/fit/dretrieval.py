@@ -30,6 +30,7 @@ except:
 
 try:
     import dynesty
+    from schwimmbad import MPIPool
 except:
     warnings.warn(
         "dynesty could not be imported. "
@@ -3615,7 +3616,7 @@ class AtmosphericRetrieval:
         #                         sample='rslice', # TODO: make variable
         #                         )
 
-        self.fileprefix = os.getcwd()+'/' # TODO:
+        self.fileprefix = out_basename
 
         if not mpi_pool:
             with dynesty.pool.Pool(npool, self.loglike_func, self.prior_func) as pool:
@@ -3666,69 +3667,59 @@ class AtmosphericRetrieval:
                     )
 
         else:
-            raise NotImplementedError
-        # TODO:
-            # pool = MPIPool()
+            pool = MPIPool()
 
-            # if not pool.is_master():
-            #     pool.wait()
-            #     sys.exit(0)
+            if not pool.is_master():
+                pool.wait()
+                sys.exit(0)
 
-            # if dynamic:
-            #     if resume:
-            #         dsampler = dynesty.DynamicNestedSampler.restore(
-            #             fname=f'{self.fileprefix}dynesty.save',
-            #             pool=pool,
-            #         )
+            if dynamic:
+                if resume:
+                    dsampler = dynesty.DynamicNestedSampler.restore(
+                        fname=f'{self.fileprefix}dynesty.save',
+                        pool=pool,
+                    )
 
-            #     else:
-            #         dsampler = dynesty.DynamicNestedSampler(
-            #             loglikelihood=self.loglike_func,
-            #             prior_transform=self.prior_func,
-            #             ndim=len(self.parameters),
-            #             pool=pool,
-            #             sample=sample_method,
-            #         )
+                else:
+                    dsampler = dynesty.DynamicNestedSampler(
+                        loglikelihood=self.loglike_func,
+                        prior_transform=self.prior_func,
+                        ndim=len(self.parameters),
+                        pool=pool,
+                        sample=sample_method,
+                    )
 
-            #     dsampler.run_nested(
-            #         dlogz_init=dlogz,
-            #         nlive_init=n_live_points,
-            #         checkpoint_file=f'{self.fileprefix}dynesty.save',
-            #         resume=resume,
-            #     )
+                dsampler.run_nested(
+                    dlogz_init=dlogz,
+                    nlive_init=n_live_points,
+                    checkpoint_file=f'{self.fileprefix}dynesty.save',
+                    resume=resume,
+                )
 
-            # else:
-            #     if resume:
-            #         dsampler = dynesty.NestedSampler.restore(
-            #             fname=f'{self.fileprefix}dynesty.save',
-            #             pool=pool,
-            #         )
+            else:
+                if resume:
+                    dsampler = dynesty.NestedSampler.restore(
+                        fname=f'{self.fileprefix}dynesty.save',
+                        pool=pool,
+                    )
 
-            #     else:
-            #         dsampler = dynesty.NestedSampler(
-            #             loglikelihood=self.loglike_func,
-            #             prior_transform=self.prior_func,
-            #             ndim=len(self.parameters),
-            #             pool=pool,
-            #             nlive=n_live_points,
-            #             sample=sample_method,
-            #         )
+                else:
+                    dsampler = dynesty.NestedSampler(
+                        loglikelihood=self.loglike_func,
+                        prior_transform=self.prior_func,
+                        ndim=len(self.parameters),
+                        pool=pool,
+                        nlive=n_live_points,
+                        sample=sample_method,
+                    )
 
-            #     dsampler.run_nested(
-            #         dlogz=dlogz,
-            #         checkpoint_file=f'{self.fileprefix}dynesty.save',
-            #         resume=resume,
-            #     )
+                dsampler.run_nested(
+                    dlogz=dlogz,
+                    checkpoint_file=f'{self.fileprefix}dynesty.save',
+                    resume=resume,
+                )
 
         results = dsampler.results
-
-        from dynesty import plotting as dyplot
-
-        # fg, ax = dyplot.cornerplot(results, color='cornflowerblue', 
-        #                            show_titles=True,
-        #                            max_n_ticks=3, quantiles=None,
-        #                         )
-        # plt.show()
 
         new_samples = results.samples_equal()
 
@@ -3736,16 +3727,10 @@ class AtmosphericRetrieval:
 
         np.savetxt(new_samples_filename, np.c_[new_samples, results.logl])
 
+        from dynesty import plotting as dyplot
 
-        # pymultinest.run(
-        #     loglike_func,
-        #     prior_func,
-        #     len(self.parameters),
-        #     outputfiles_basename=out_basename,
-        #     resume=resume,
-        #     verbose=True,
-        #     const_efficiency_mode=True,
-        #     sampling_efficiency=0.05,
-        #     n_live_points=n_live_points,
-        #     evidence_tolerance=0.5,
-        # )
+        fg, ax = dyplot.cornerplot(results, color='cornflowerblue', 
+                                   show_titles=True,
+                                   max_n_ticks=3, quantiles=None,
+                                )
+        plt.savefig(out_basename+'dynesty_corner_retrieval.pdf')

@@ -2974,7 +2974,7 @@ class AtmosphericRetrieval:
         cross_corr: Optional[List[str]] = None,
         npool: Optional[int] = 4, 
         dynamic: Optional[bool] = False, 
-        mpi_pool: Optional[bool] = False,
+        mpi_pool: Optional[any] = None,
         sample_method: Optional[str] = 'rslice',
         n_live_points: int = 2000,
         dlogz: Optional[float] = 0.5,
@@ -3618,7 +3618,7 @@ class AtmosphericRetrieval:
 
         self.fileprefix = out_basename
 
-        if not mpi_pool:
+        if mpi_pool is None:
             with dynesty.pool.Pool(npool, self.loglike_func, self.prior_func) as pool:
                 if dynamic:
                     if resume:
@@ -3667,12 +3667,7 @@ class AtmosphericRetrieval:
                     )
 
         else:
-            pool = MPIPool()
-
-            if not pool.is_master():
-                pool.wait()
-                sys.exit(0)
-
+            pool = mpi_pool
             if dynamic:
                 if resume:
                     dsampler = dynesty.DynamicNestedSampler.restore(

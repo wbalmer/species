@@ -846,7 +846,9 @@ def plot_posterior(
         show_titles=True,
         title_fmt=None,
         title_kwargs={"fontsize": 12},
-        color=color
+        color=color,
+        plot_datapoints=False,
+        plot_density=False,
     )
 
     axes = np.array(fig.axes).reshape((ndim, ndim))

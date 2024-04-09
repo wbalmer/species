@@ -1440,7 +1440,7 @@ def plot_spectrum(
     # ax1.text(2.5, 1.28, 'VLT/SINFONI', ha='left', va='center', fontsize=8., color='darkgray')
 
     if output is None:
-        plt.show()
+        pass
     else:
         print(f"\nOutput: {output}")
         plt.savefig(output, bbox_inches="tight")

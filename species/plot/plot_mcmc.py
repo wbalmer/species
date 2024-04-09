@@ -220,6 +220,7 @@ def plot_posterior(
     object_type: str = "planet",
     param_inc: Optional[List[str]] = None,
     show_priors: bool = False,
+    color: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
     Function to plot the posterior distribution
@@ -292,6 +293,8 @@ def plot_posterior(
         set with the ``normal_prior`` parameter in
         :class:`~species.fit.fit_model.FitModel` and
         :class:`~species.fit.retrieval.AtmosphericRetrieval.setup_retrieval`.
+    color : str, None
+        Color of the contour lines of the corner plot.
 
     Returns
     -------
@@ -841,6 +844,7 @@ def plot_posterior(
         show_titles=True,
         title_fmt=None,
         title_kwargs={"fontsize": 12},
+        color=color
     )
 
     axes = np.array(fig.axes).reshape((ndim, ndim))

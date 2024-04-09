@@ -202,8 +202,9 @@ def plot_color_magnitude(
     print(f"Limits x axis: {xlim}")
     print(f"Limits y axis: {ylim}")
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     # model_color = ("#234398", "#f6a432", "black")
 
@@ -1060,8 +1061,9 @@ def plot_color_color(
     print(f"Limits x axis: {xlim}")
     print(f"Limits y axis: {ylim}")
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     # model_color = ("#234398", "#f6a432", "black")
 

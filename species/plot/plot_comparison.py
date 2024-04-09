@@ -89,8 +89,9 @@ def plot_statistic(
         sptypes = np.array(hdf5_file[f"results/empirical/{tag}/sptypes"])
         g_fit = np.array(hdf5_file[f"results/empirical/{tag}/goodness_of_fit"])
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
     plt.rcParams["axes.axisbelow"] = False
 
     fig = plt.figure(figsize=figsize)
@@ -287,8 +288,9 @@ def plot_empirical_spectra(
     if n_spectra is None:
         n_spectra = names.size
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
     plt.rcParams["axes.axisbelow"] = False
 
     fig = plt.figure(figsize=figsize)
@@ -574,8 +576,9 @@ def plot_grid_statistic(
             param_y = model_param[i + 1]
             break
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
     plt.rcParams["axes.axisbelow"] = False
 
     fig = plt.figure(figsize=figsize)
@@ -1064,8 +1067,9 @@ def plot_model_spectra(
             / constants.R_JUP
         )
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
     plt.rcParams["axes.axisbelow"] = False
 
     fig = plt.figure(figsize=figsize)

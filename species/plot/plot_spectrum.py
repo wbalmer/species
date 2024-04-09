@@ -200,8 +200,9 @@ def plot_spectrum(
     print(f"Legend parameters: {leg_param}")
     print(f"Include model name: {inc_model_name}")
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
     plt.rcParams["axes.axisbelow"] = False
 
     if plot_kwargs is None:

@@ -79,8 +79,9 @@ def plot_walkers(
     else:
         print(f"Plotting walkers: {output}...", end="", flush=True)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     samples = box.samples
     labels = update_labels(box.parameters)
@@ -316,8 +317,9 @@ def plot_posterior(
     print(f"Object type: {object_type}")
     print(f"Manual parameters: {param_inc}")
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     if burnin is None:
         burnin = 0
@@ -990,8 +992,9 @@ def plot_mag_posterior(
         customization of the plot.
     """
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     from species.data.database import Database
 
@@ -1113,8 +1116,9 @@ def plot_size_distributions(
     if burnin is None:
         burnin = 0
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     if "lognorm_radius" not in box.parameters and "powerlaw_max" not in box.parameters:
         raise ValueError(
@@ -1302,8 +1306,9 @@ def plot_extinction(
     if wavel_range is None:
         wavel_range = (0.4, 10.0)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     samples = box.samples
 

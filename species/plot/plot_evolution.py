@@ -105,8 +105,9 @@ def plot_cooling(
 
     read_iso = ReadIsochrone(evolution_model)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     if output is None:
         print("Plotting cooling curves...", end="", flush=True)
@@ -330,8 +331,9 @@ def plot_isochrones(
 
     read_iso = ReadIsochrone(evolution_model)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     if output is None:
         print("Plotting isochrones...", end="", flush=True)

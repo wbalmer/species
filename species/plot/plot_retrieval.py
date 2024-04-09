@@ -123,8 +123,9 @@ def plot_pt_profile(
     for item in parameters:
         param_index[item] = np.argwhere(parameters == item)[0][0]
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     fig = plt.figure(figsize=(4.0, 5.0))
     gridsp = mpl.gridspec.GridSpec(1, 1)
@@ -866,8 +867,9 @@ def plot_opacities(
     box = species_db.get_samples(tag)
     model_param = box.prob_sample
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     fig = plt.figure(figsize=(10.0, 6.0))
     gridsp = mpl.gridspec.GridSpec(2, 5, width_ratios=[4, 0.25, 1.5, 4, 0.25])
@@ -1371,8 +1373,9 @@ def plot_clouds(
     else:
         print(f"Plotting {composition} clouds: {output}...", end="", flush=True)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     fig = plt.figure(figsize=(4.0, 3.0))
     gridsp = mpl.gridspec.GridSpec(1, 2, width_ratios=[4, 0.25])
@@ -1574,8 +1577,9 @@ def plot_abundances(
     else:
         print(f"Plotting abundances: {output}...", end="", flush=True)
 
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
+    plt.rcParams["font.family"] = "monospace"
+    plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
+    plt.rcParams["mathtext.fontset"] = "dejavusans"
 
     fig = plt.figure(figsize=(4.0, 3.0))
     gridsp = mpl.gridspec.GridSpec(1, 1)

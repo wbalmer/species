@@ -188,9 +188,34 @@ class FitModel:
                  which adds a constant flux (in W m-2 um-1) to the
                  model spectrum.
 
-            Blackbody parameters (with ``model='planck'``):
+            Blackbody disk emission:
 
-               - Parameter boundaries have to be provided for 'teff'
+               - Blackbody parameters can be fitted to account for
+                 thermal emission from one or multiple disk
+                 components, in addition to the atmospheric
+                 emission. These parameters should therefore be
+                 combined with an atmospheric model.
+
+               - Parameter boundaries have to be provided for
+                 'disk_teff' and 'disk_radius'. For example,
+                 ``bounds={'teff': (2000., 3000.), 'radius': (1., 5.),
+                 'logg': (3.5, 4.5), 'disk_teff': (100., 2000.),
+                 'disk_radius': (1., 100.)}`` for fitting a single
+                 blackbody component, in addition to the atmospheric
+                 parameters. Or, ``bounds={'teff': (2000., 3000.),
+                 'radius': (1., 5.), 'logg': (3.5, 4.5),
+                 'disk_teff': [(2000., 500.), (1000., 20.)],
+                 'disk_radius': [(1., 100.), (50., 1000.)]}`` for
+                 fitting two blackbody components. Any number of
+                 blackbody components can be fitted by including
+                 additional priors in the lists of ``'disk_teff'``
+                 and ``'disk_radius'``.
+
+            Blackbody parameters (only with ``model='planck'``):
+
+               - This implementation fits both the atmospheric emission
+                 and possible disk emission with blackbody components.
+                 Parameter boundaries have to be provided for 'teff'
                  and 'radius'.
 
                - For a single blackbody component, the values are
@@ -363,18 +388,6 @@ class FitModel:
                    ``powerlaw_ext``, and a log-uniform prior for
                    ``powerlaw_max``.
 
-            Blackbody disk emission:
-
-                 - Additional blackbody emission can be added to the
-                   atmospheric spectrum to account for thermal emission
-                   from a disk.
-
-                 - Parameter boundaries have to be provided for
-                   'disk_teff' and 'disk_radius'. For example,
-                   ``bounds={'teff': (2000., 3000.), 'radius': (1., 5.),
-                   'logg': (3.5, 4.5), 'disk_teff': (100., 2000.),
-                   'disk_radius': (1., 100.)}``.
-
         inc_phot : bool, list(str)
             Include photometric data in the fit. If a boolean, either
             all (``True``) or none (``False``) of the data are
@@ -459,7 +472,7 @@ class FitModel:
         # Set attributes
 
         self.object = ReadObject(object_name)
-        self.parallax = self.object.get_parallax()
+        self.obj_parallax = self.object.get_parallax()
         self.binary = False
         self.ext_filter = ext_filter
 
@@ -532,12 +545,6 @@ class FitModel:
                         self.bounds[f"{key}_1"] = bounds_grid[key]
                         del self.bounds[key]
 
-                    elif isinstance(self.bounds[key][0], tuple):
-                        self.binary = True
-                        self.bounds[f"{key}_0"] = self.bounds[key][0]
-                        self.bounds[f"{key}_1"] = self.bounds[key][1]
-                        del self.bounds[key]
-
                     else:
                         if self.bounds[key][0] < bounds_grid[key][0]:
                             warnings.warn(
@@ -607,6 +614,10 @@ class FitModel:
                 readmodel = ReadModel(self.model, None, None)
                 self.bounds = readmodel.get_bounds()
 
+            print(f"Object name: {object_name}")
+            print(f"Model tag: {model}")
+            print(f"Binary star: {self.binary}")
+
             self.modelpar = readmodel.get_parameters()
 
             if "flux_scaling" in self.bounds:
@@ -621,7 +632,22 @@ class FitModel:
 
             else:
                 self.modelpar.append("radius")
-                self.modelpar.append("parallax")
+
+                if self.binary:
+                    if "parallax" in self.bounds:
+                        if isinstance(self.bounds["parallax"][0], tuple):
+                            self.modelpar.append("parallax_0")
+                            self.modelpar.append("parallax_1")
+                            self.bounds["parallax_0"] = self.bounds["parallax"][0]
+                            self.bounds["parallax_1"] = self.bounds["parallax"][1]
+                            del self.bounds["parallax"]
+
+                    if "parallax_0" in self.normal_prior:
+                            self.modelpar.append("parallax_0")
+                            self.modelpar.append("parallax_1")
+
+                if "parallax_0" not in self.modelpar:
+                    self.modelpar.append("parallax")
 
             if "flux_offset" in self.bounds:
                 self.modelpar.append("flux_offset")
@@ -649,8 +675,32 @@ class FitModel:
             self.n_planck = 0
 
             if "disk_teff" in self.bounds and "disk_radius" in self.bounds:
-                self.modelpar.append("disk_teff")
-                self.modelpar.append("disk_radius")
+                if isinstance(bounds["disk_teff"], list) and isinstance(
+                    bounds["disk_radius"], list
+                ):
+                    # Update temperature and radius parameters
+                    # in case of multiple disk components
+                    self.n_disk = len(bounds["disk_teff"])
+
+                    for i, item in enumerate(bounds["disk_teff"]):
+                        self.modelpar.append(f"disk_teff_{i}")
+                        self.modelpar.append(f"disk_radius_{i}")
+
+                        self.bounds[f"disk_teff_{i}"] = bounds["disk_teff"][i]
+                        self.bounds[f"disk_radius_{i}"] = bounds["disk_radius"][i]
+
+                    del bounds["disk_teff"]
+                    del bounds["disk_radius"]
+
+                else:
+                    # Fitting a single disk component
+                    self.n_disk = 1
+
+                    self.modelpar.append("disk_teff")
+                    self.modelpar.append("disk_radius")
+
+            else:
+                self.n_disk = 0
 
             if self.binary:
                 # Update list of model parameters
@@ -661,10 +711,16 @@ class FitModel:
                         self.modelpar[par_index] = key[:-2] + "_0"
                         self.modelpar.insert(par_index, key[:-2] + "_1")
 
-                self.modelpar.append("spec_weight")
+                        
+                if "radius" in self.modelpar:
+                    # Fit a weighting for the two spectra in case this
+                    # is a single object, so not an actual binary star.
+                    # In that case the combination of two spectra is
+                    # used to account for atmospheric assymetries
+                    self.modelpar.append("spec_weight")
 
-                if "spec_weight" not in self.bounds:
-                    self.bounds["spec_weight"] = (0.0, 1.0)
+                    if "spec_weight" not in self.bounds:
+                        self.bounds["spec_weight"] = (0.0, 1.0)
 
         # Select filters and spectra
 
@@ -699,6 +755,8 @@ class FitModel:
         self.modelphot = []
         self.filter_name = []
         self.instr_name = []
+
+        print()
 
         for item in inc_phot:
             if self.model == "planck":
@@ -847,7 +905,7 @@ class FitModel:
         self.diskphot = []
         self.diskspec = []
 
-        if "disk_teff" in self.bounds and "disk_radius" in self.bounds:
+        if self.n_disk > 0:
             for item in inc_phot:
                 print(f"Interpolating {item}...", end="", flush=True)
                 readmodel = ReadModel("blackbody", filter_name=item)
@@ -998,8 +1056,8 @@ class FitModel:
 
         # Add parallax to dictionary with Gaussian priors
 
-        if "parallax" in self.modelpar and "parallax" not in self.fix_param:
-            self.normal_prior["parallax"] = (self.parallax[0], self.parallax[1])
+        if "parallax" in self.modelpar and "parallax" not in self.fix_param and "parallax" not in self.bounds:
+            self.normal_prior["parallax"] = (self.obj_parallax[0], self.obj_parallax[1])
 
         # Printing uniform and normal priors
 
@@ -1182,7 +1240,6 @@ class FitModel:
         corr_len = {}
         corr_amp = {}
         dust_param = {}
-        disk_param = {}
         veil_param = {}
         param_dict = {}
         rad_vel = {}
@@ -1223,12 +1280,6 @@ class FitModel:
             elif self.ext_filter is not None and item == f"phot_ext_{self.ext_filter}":
                 dust_param[item] = params[self.cube_index[item]]
 
-            elif item == "disk_teff":
-                disk_param["teff"] = params[self.cube_index[item]]
-
-            elif item == "disk_radius":
-                disk_param["radius"] = params[self.cube_index[item]]
-
             elif item == "veil_a":
                 veil_param["veil_a"] = params[self.cube_index[item]]
 
@@ -1244,10 +1295,59 @@ class FitModel:
             else:
                 param_dict[item] = params[self.cube_index[item]]
 
+        # Disk parameters
+
+        disk_param = {}
+
+        if self.n_disk == 1:
+            if "disk_teff" in self.fix_param:
+                disk_param["teff"] = self.fix_param["disk_teff"]
+            else:
+                disk_param["teff"] = params[self.cube_index["disk_teff"]]
+
+            if "disk_radius" in self.fix_param:
+                disk_param["radius"] = self.fix_param["disk_radius"]
+            else:
+                disk_param["radius"] = params[self.cube_index["disk_radius"]]
+
+        elif self.n_disk > 1:
+            for disk_idx in range(self.n_disk):
+                if f"disk_teff_{disk_idx}" in self.fix_param:
+                    disk_param[f"teff_{disk_idx}"] = self.fix_param[
+                        f"disk_teff_{disk_idx}"
+                    ]
+                else:
+                    disk_param[f"teff_{disk_idx}"] = params[
+                        self.cube_index[f"disk_teff_{disk_idx}"]
+                    ]
+
+                if f"disk_radius_{disk_idx}" in self.fix_param:
+                    disk_param[f"radius_{disk_idx}"] = self.fix_param[
+                        f"disk_radius_{disk_idx}"
+                    ]
+                else:
+                    disk_param[f"radius_{disk_idx}"] = params[
+                        self.cube_index[f"disk_radius_{disk_idx}"]
+                    ]
+
         # Add the parallax manually because it should
         # not be provided in the bounds dictionary
 
         if self.model != "powerlaw":
+            if "parallax_0" in self.cube_index:
+                parallax_0 = params[self.cube_index["parallax_0"]]
+            elif "parallax_0" in self.fix_param:
+                parallax_0 = self.fix_param["parallax_0"]
+            else:
+                parallax_0 = params[self.cube_index["parallax"]]
+
+            if "parallax_1" in self.cube_index:
+                parallax_1 = params[self.cube_index["parallax_1"]]
+            elif "parallax_0" in self.fix_param:
+                parallax_1 = self.fix_param["parallax_1"]
+            else:
+                parallax_1 = params[self.cube_index["parallax"]]
+
             if "parallax" in self.cube_index:
                 parallax = params[self.cube_index["parallax"]]
             elif "parallax" in self.fix_param:
@@ -1285,17 +1385,13 @@ class FitModel:
             elif item[:9] == "phot_ext_":
                 dust_param[item] = self.fix_param[item]
 
-            elif item == "disk_teff":
-                disk_param["teff"] = self.fix_param[item]
-
-            elif item == "disk_radius":
-                disk_param["radius"] = self.fix_param[item]
-
             elif item == "spec_weight":
                 pass
 
             else:
                 param_dict[item] = self.fix_param[item]
+
+        # Check if the blackbody temperatures/radii are decreasing/increasing
 
         if self.model == "planck" and self.n_planck > 1:
             for i in range(self.n_planck - 1):
@@ -1305,26 +1401,50 @@ class FitModel:
                 if param_dict[f"radius_{i}"] > param_dict[f"radius_{i+1}"]:
                     return -np.inf
 
-        if disk_param:
+        if self.n_disk == 1:
             if disk_param["teff"] > param_dict["teff"]:
                 return -np.inf
 
             if disk_param["radius"] < param_dict["radius"]:
                 return -np.inf
 
+        elif self.n_disk > 1:
+            for disk_idx in range(self.n_disk):
+                if disk_idx == 0:
+                    if disk_param["teff_0"] > param_dict["teff"]:
+                        return -np.inf
+
+                    if disk_param["radius_0"] < param_dict["radius"]:
+                        return -np.inf
+
+                else:
+                    if (
+                        disk_param[f"teff_{disk_idx}"]
+                        > disk_param[f"teff_{disk_idx-1}"]
+                    ):
+                        return -np.inf
+
+                    if (
+                        disk_param[f"radius_{disk_idx}"]
+                        < disk_param[f"radius_{disk_idx-1}"]
+                    ):
+                        return -np.inf
+
         if self.model != "powerlaw":
             if "radius_0" in param_dict and "radius_1" in param_dict:
                 flux_scaling_0 = (param_dict["radius_0"] * constants.R_JUP) ** 2 / (
-                    1e3 * constants.PARSEC / parallax
+                    1e3 * constants.PARSEC / parallax_0
                 ) ** 2
 
                 flux_scaling_1 = (param_dict["radius_1"] * constants.R_JUP) ** 2 / (
-                    1e3 * constants.PARSEC / parallax
+                    1e3 * constants.PARSEC / parallax_1
                 ) ** 2
 
                 # The scaling is applied manually because of the interpolation
                 del param_dict["radius_0"]
                 del param_dict["radius_1"]
+
+                flux_offset = 0.0
 
             else:
                 if parallax is None:
@@ -1488,12 +1608,17 @@ class FitModel:
                         phot_flux_1 *= flux_scaling_1
                         phot_flux_1 += flux_offset
 
-                    # Weighted flux of two stars
+                    # Weighted flux of two spectra for atmospheric asymmetries
+                    # Or simply the same in case of an actual binary system
 
-                    phot_flux = (
-                        params[self.cube_index["spec_weight"]] * phot_flux_0
-                        + (1.0 - params[self.cube_index["spec_weight"]]) * phot_flux_1
-                    )
+                    if "spec_weight" in self.cube_index:
+                        phot_flux = (
+                            params[self.cube_index["spec_weight"]] * phot_flux_0
+                            + (1.0 - params[self.cube_index["spec_weight"]]) * phot_flux_1
+                        )
+
+                    else:
+                        phot_flux = phot_flux_0 + phot_flux_1
 
                 else:
                     phot_flux = self.modelphot[i].spectrum_interp(
@@ -1503,7 +1628,9 @@ class FitModel:
                     phot_flux *= flux_scaling
                     phot_flux += flux_offset
 
-            if disk_param:
+            # Add blackbody flux from disk components
+
+            if self.n_disk == 1:
                 phot_tmp = self.diskphot[i].spectrum_interp([disk_param["teff"]])[0][0]
 
                 phot_flux += (
@@ -1511,6 +1638,20 @@ class FitModel:
                     * (disk_param["radius"] * constants.R_JUP) ** 2
                     / (1e3 * constants.PARSEC / parallax) ** 2
                 )
+
+            elif self.n_disk > 1:
+                for disk_idx in range(self.n_disk):
+                    phot_tmp = self.diskphot[i].spectrum_interp(
+                        [disk_param[f"teff_{disk_idx}"]]
+                    )[0][0]
+
+                    phot_flux += (
+                        phot_tmp
+                        * (disk_param[f"radius_{disk_idx}"] * constants.R_JUP) ** 2
+                        / (1e3 * constants.PARSEC / parallax) ** 2
+                    )
+
+            # Apply extinction
 
             if "lognorm_ext" in dust_param:
                 cross_tmp = self.cross_sections[phot_filter](
@@ -1664,12 +1805,17 @@ class FitModel:
                         model_flux_1 *= flux_scaling_1
                         model_flux_1 += flux_offset
 
-                    # Weighted flux of two stars
+                    # Weighted flux of two spectra for atmospheric asymmetries
+                    # Or simply the same in case of an actual binary system
 
-                    model_flux = (
-                        params[self.cube_index["spec_weight"]] * model_flux_0
-                        + (1.0 - params[self.cube_index["spec_weight"]]) * model_flux_1
-                    )
+                    if "spec_weight" in self.cube_index:
+                        model_flux = (
+                            params[self.cube_index["spec_weight"]] * model_flux_0
+                            + (1.0 - params[self.cube_index["spec_weight"]]) * model_flux_1
+                        )
+                    else:
+                        model_flux = model_flux_0 + model_flux_1
+
 
                 else:
                     model_flux = self.modelspec[i].spectrum_interp(
@@ -1766,7 +1912,9 @@ class FitModel:
                         self.spectrum[item][1] * sigma_i * sigma_j
                     )
 
-            if disk_param:
+            # Add blackbody flux from disk components
+
+            if self.n_disk == 1:
                 model_tmp = self.diskspec[i].spectrum_interp([disk_param["teff"]])[0, :]
 
                 model_tmp *= (disk_param["radius"] * constants.R_JUP) ** 2 / (
@@ -1774,6 +1922,20 @@ class FitModel:
                 ) ** 2
 
                 model_flux += model_tmp
+
+            elif self.n_disk > 1:
+                for disk_idx in range(self.n_disk):
+                    model_tmp = self.diskspec[i].spectrum_interp(
+                        [disk_param[f"teff_{disk_idx}"]]
+                    )[0, :]
+
+                    model_tmp *= (
+                        disk_param[f"radius_{disk_idx}"] * constants.R_JUP
+                    ) ** 2 / (1e3 * constants.PARSEC / parallax) ** 2
+
+                    model_flux += model_tmp
+
+            # Apply extinction
 
             if "lognorm_ext" in dust_param:
                 cross_tmp = self.cross_sections["spectrum"](
@@ -1820,6 +1982,8 @@ class FitModel:
                 )
 
                 model_flux *= 10.0 ** (-0.4 * ext_spec)
+
+            # Calculate the likelihood
 
             if self.spectrum[item][2] is not None:
                 # Use the inverted covariance matrix
@@ -2119,7 +2283,7 @@ class FitModel:
             "spec_type": "model",
             "spec_name": self.model,
             "ln_evidence": (ln_z, ln_z_error),
-            "parallax": self.parallax[0],
+            "parallax": self.obj_parallax[0],
         }
 
         if self.ext_filter is not None:
@@ -2385,7 +2549,7 @@ class FitModel:
             "spec_type": "model",
             "spec_name": self.model,
             "ln_evidence": (ln_z, ln_z_error),
-            "parallax": self.parallax[0],
+            "parallax": self.obj_parallax[0],
         }
 
         if self.ext_filter is not None:
@@ -2748,7 +2912,7 @@ class FitModel:
             "spec_type": "model",
             "spec_name": self.model,
             "ln_evidence": (ln_z, ln_z_error),
-            "parallax": self.parallax[0],
+            "parallax": self.obj_parallax[0],
         }
 
         if self.ext_filter is not None:

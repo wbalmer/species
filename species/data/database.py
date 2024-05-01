@@ -1435,7 +1435,9 @@ class Database:
                     read_cov[spec_item] = None
 
                 elif isinstance(spec_value[1], str):
-                    if spec_value[1].endswith(".fits") or spec_value[1].endswith(".fit"):
+                    if spec_value[1].endswith(".fits") or spec_value[1].endswith(
+                        ".fit"
+                    ):
                         with fits.open(spec_value[1]) as hdulist:
                             if (
                                 "INSTRU" in hdulist[0].header
@@ -1480,7 +1482,10 @@ class Database:
                                         correlation_to_covariance,
                                     )
 
-                                    if data.ndim == 2 and data.shape[0] == data.shape[1]:
+                                    if (
+                                        data.ndim == 2
+                                        and data.shape[0] == data.shape[1]
+                                    ):
                                         if spec_item not in read_cov:
                                             if (
                                                 data.shape[0]
@@ -1855,7 +1860,11 @@ class Database:
                 )
 
                 bibcode[spec_tag] = _fetch_bibcode(row["reference"])
-                spectrum[spec_tag] = (spec_data, np.diag(spec_data[:, 2]**2), float(spec_res))
+                spectrum[spec_tag] = (
+                    spec_data,
+                    np.diag(spec_data[:, 2] ** 2),
+                    float(spec_res),
+                )
 
         if spectrum is None:
             if app_mag is not None:
@@ -2330,7 +2339,7 @@ class Database:
 
                 prob_sample[par_key] = par_value
 
-            if "parallax" not in prob_sample and "parallax" in dset.attrs:
+            if "parallax" not in prob_sample and "parallax_0" not in prob_sample and "parallax" in dset.attrs:
                 prob_sample["parallax"] = dset.attrs["parallax"]
 
             elif "distance" not in prob_sample and "distance" in dset.attrs:
@@ -2417,7 +2426,7 @@ class Database:
                 par_value = np.median(samples[:, i])
                 median_sample[par_key] = par_value
 
-            if "parallax" not in median_sample and "parallax" in dset.attrs:
+            if "parallax" not in median_sample and "parallax_0" not in median_sample and "parallax" in dset.attrs:
                 median_sample["parallax"] = dset.attrs["parallax"]
 
             elif "distance" not in median_sample and "distance" in dset.attrs:
@@ -2677,7 +2686,7 @@ class Database:
                 if param[j] not in ignore_param:
                     model_param[param[j]] = samples[i, j]
 
-            if "parallax" not in model_param and parallax is not None:
+            if "parallax" not in model_param and "parallax_0" not in model_param and parallax is not None:
                 model_param["parallax"] = parallax
 
             elif "distance" not in model_param and distance is not None:
@@ -2724,10 +2733,17 @@ class Database:
                             ext_filter=ext_filter,
                         )
 
-                        flux_comb = (
-                            model_param["spec_weight"] * specbox_0.flux
-                            + (1.0 - model_param["spec_weight"]) * specbox_1.flux
-                        )
+                        # Weighted flux of two spectra for atmospheric asymmetries
+                        # Or simply the same in case of an actual binary system
+
+                        if "spec_weight" in model_param:
+                            flux_comb = (
+                                model_param["spec_weight"] * specbox_0.flux
+                                + (1.0 - model_param["spec_weight"]) * specbox_1.flux
+                            )
+
+                        else:
+                            flux_comb = specbox_0.flux + specbox_1.flux
 
                         specbox = create_box(
                             boxtype="model",
@@ -2760,6 +2776,7 @@ class Database:
         filter_name: str,
         burnin: Optional[int] = None,
         phot_type: str = "magnitude",
+        flux_units: str = "W m-2 um-1",
     ) -> np.ndarray:
         """
         Function for calculating synthetic magnitudes or fluxes
@@ -2779,11 +2796,16 @@ class Database:
             have been sampled with ``emcee``.
         phot_type : str
             Photometry type ('magnitude' or 'flux').
+        flux_units : tuple(str, str), None
+            Flux units that will be used when the ``phot_type``
+            argument is set to ``'flux``. Supported units can
+            be found in the docstring of
+            :func:`~species.util.data_util.convert_units`.
 
         Returns
         -------
         np.ndarray
-            Synthetic magnitudes or fluxes (W m-2 um-1).
+            Synthetic magnitudes or fluxes.
         """
 
         if phot_type not in ["magnitude", "flux"]:
@@ -2795,49 +2817,50 @@ class Database:
         if burnin is None:
             burnin = 0
 
-        hdf5_file = h5py.File(self.database, "r")
-        dset = hdf5_file[f"results/fit/{tag}/samples"]
+        with h5py.File(self.database, "r") as hdf5_file:
+            dset = hdf5_file[f"results/fit/{tag}/samples"]
 
-        if "n_param" in dset.attrs:
-            n_param = dset.attrs["n_param"]
-        elif "nparam" in dset.attrs:
-            n_param = dset.attrs["nparam"]
+            if "n_param" in dset.attrs:
+                n_param = dset.attrs["n_param"]
+            elif "nparam" in dset.attrs:
+                n_param = dset.attrs["nparam"]
 
-        spectrum_type = dset.attrs["type"]
-        spectrum_name = dset.attrs["spectrum"]
+            spectrum_type = dset.attrs["type"]
+            spectrum_name = dset.attrs["spectrum"]
 
-        if "binary" in dset.attrs:
-            binary = dset.attrs["binary"]
-        else:
-            binary = False
+            if "binary" in dset.attrs:
+                binary = dset.attrs["binary"]
+            else:
+                binary = False
 
-        if "parallax" in dset.attrs:
-            parallax = dset.attrs["parallax"]
-        else:
-            parallax = None
+            if "parallax" in dset.attrs:
+                parallax = dset.attrs["parallax"]
+            else:
+                parallax = None
 
-        if "distance" in dset.attrs:
-            distance = dset.attrs["distance"]
-        else:
-            distance = None
+            if "distance" in dset.attrs:
+                distance = dset.attrs["distance"]
+            else:
+                distance = None
 
-        samples = np.asarray(dset)
+            samples = np.asarray(dset)
 
-        if samples.ndim == 3:
-            if burnin > samples.shape[0]:
-                raise ValueError(
-                    f"The 'burnin' value is larger than the number of steps "
-                    f"({samples.shape[1]}) that are made by the walkers."
+            if samples.ndim == 3:
+                if burnin > samples.shape[0]:
+                    raise ValueError(
+                        "The 'burnin' value is larger than the "
+                        f"number of steps ({samples.shape[1]}) "
+                        "that are made by the walkers."
+                    )
+
+                samples = samples[burnin:, :, :]
+                samples = samples.reshape(
+                    (samples.shape[0] * samples.shape[1], n_param)
                 )
 
-            samples = samples[burnin:, :, :]
-            samples = samples.reshape((samples.shape[0] * samples.shape[1], n_param))
-
-        param = []
-        for i in range(n_param):
-            param.append(dset.attrs[f"parameter{i}"])
-
-        hdf5_file.close()
+            param = []
+            for i in range(n_param):
+                param.append(dset.attrs[f"parameter{i}"])
 
         if spectrum_type == "model":
             if spectrum_name == "powerlaw":
@@ -2864,7 +2887,7 @@ class Database:
             for j in range(n_param):
                 model_param[param[j]] = samples[i, j]
 
-            if "parallax" not in model_param and parallax is not None:
+            if "parallax" not in model_param and "parallax_0" not in model_param and parallax is not None:
                 model_param["parallax"] = parallax
 
             elif "distance" not in model_param and distance is not None:
@@ -2898,10 +2921,17 @@ class Database:
                             param_1 = binary_to_single(model_param, 1)
                             mcmc_phot_1, _ = readmodel.get_magnitude(param_1)
 
-                            mcmc_phot[i] = (
-                                model_param["spec_weight"] * mcmc_phot_0
-                                + (1.0 - model_param["spec_weight"]) * mcmc_phot_1
-                            )
+                            # Weighted flux of two spectra for atmospheric asymmetries
+                            # Or simply the same in case of an actual binary system
+
+                            if "spec_weight" in model_param:
+                                mcmc_phot[i] = (
+                                    model_param["spec_weight"] * mcmc_phot_0
+                                    + (1.0 - model_param["spec_weight"]) * mcmc_phot_1
+                                )
+
+                            else:
+                                mcmc_phot[i] = mcmc_phot_0 + mcmc_phot_1
 
                         else:
                             mcmc_phot[i], _ = readmodel.get_magnitude(model_param)
@@ -2916,10 +2946,17 @@ class Database:
                             param_1 = binary_to_single(model_param, 1)
                             mcmc_phot_1, _ = readmodel.get_flux(param_1)
 
-                            mcmc_phot[i] = (
-                                model_param["spec_weight"] * mcmc_phot_0
-                                + (1.0 - model_param["spec_weight"]) * mcmc_phot_1
-                            )
+                            # Weighted flux of two spectra for atmospheric asymmetries
+                            # Or simply the same in case of an actual binary system
+
+                            if "spec_weight" in model_param:
+                                mcmc_phot[i] = (
+                                    model_param["spec_weight"] * mcmc_phot_0
+                                    + (1.0 - model_param["spec_weight"]) * mcmc_phot_1
+                                )
+
+                            else:
+                                mcmc_phot[i] = mcmc_phot_0 + mcmc_phot_1
 
                         else:
                             mcmc_phot[i], _ = readmodel.get_flux(model_param)
@@ -2931,6 +2968,20 @@ class Database:
 
                 elif phot_type == "flux":
                     mcmc_phot[i], _ = readcalib.get_flux(model_param=model_param)
+
+        if phot_type == "flux":
+            from species.read.read_filter import ReadFilter
+            from species.util.data_util import convert_units
+
+            read_filt = ReadFilter(filter_name)
+            filt_wavel = read_filt.mean_wavelength()
+
+            wavel_ones = np.full(mcmc_phot.size, filt_wavel)
+            data_in = np.column_stack([wavel_ones, mcmc_phot])
+
+            data_out = convert_units(data_in, ("um", flux_units), convert_from=False)
+
+            mcmc_phot = data_out[:, 1]
 
         return mcmc_phot
 

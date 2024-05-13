@@ -554,6 +554,14 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         index = param.index("ism_ext")
         param[index] = r"$A_V$"
 
+    if "ism_ext_0" in param:
+        index = param.index("ism_ext_0")
+        param[index] = r"$A_{V,\mathrm{1}}$"
+
+    if "ism_ext_1" in param:
+        index = param.index("ism_ext_1")
+        param[index] = r"$A_{V,\mathrm{2}}$"
+
     if "ism_red" in param:
         index = param.index("ism_red")
         param[index] = r"$R_V$"
@@ -588,13 +596,13 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
 
     if "T_bottom" in param:
         index = param.index("T_bottom")
-        param[index] = r"$T_\mathrm{bottom}$ (K)"
+        param[index] = r"$T_\mathrm{bot}$ (K)"
 
     num_layer = 6  # could make a variable in the future
     for i in range(num_layer):
         if f"PTslope_{num_layer - i}" in param:
             index = param.index(f"PTslope_{num_layer - i}")
-            param[index] = rf"$(dlnT/dlnP)_\mathrm{{P={i}bar}}$ (K)"
+            param[index] = rf"dlnT/dlnP$_{i}$ "
 
     if "log_p_quench" in param:
         index = param.index("log_p_quench")
@@ -630,7 +638,7 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
 
         if f"fsed_{item}(c)" in param:
             index = param.index(f"fsed_{item}(c)")
-            param[index] = rf"$\log\,P_\mathrm{{{cloud_labels[i]}}}$"
+            param[index] = rf"fsed$_\mathrm{{{cloud_labels[i]}}}$"
 
     for i, item_i in enumerate(cloud_species):
         for j, item_j in enumerate(cloud_species):

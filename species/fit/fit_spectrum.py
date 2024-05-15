@@ -232,4 +232,6 @@ class FitSpectrum:
             tag=tag,
             modelpar=self.modelpar,
             attr_dict=attr_dict,
+            bounds=self.bounds,
+            normal_prior={},
         )

@@ -460,7 +460,7 @@ def plot_spectrum(
 
     if residuals is not None:
         if quantity == "flux density":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
+            ax3.set_ylabel(r"$\Delta$$f_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
 
         elif quantity == "flux":
             ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
@@ -488,11 +488,11 @@ def plot_spectrum(
 
             if quantity == "flux density":
                 if exponent is None:
-                    ylabel = rf"$F_\lambda$ ({y_unit})"
+                    ylabel = rf"$f_\lambda$ ({y_unit})"
 
                 else:
                     ylabel = (
-                        r"$F_\lambda$ (10$^{" + str(exponent) + r"}$" + f" {y_unit})"
+                        r"$f_\lambda$ (10$^{" + str(exponent) + r"}$" + f" {y_unit})"
                     )
 
             elif quantity == "flux":
@@ -517,7 +517,7 @@ def plot_spectrum(
         else:
             if quantity == "flux density":
                 ax1.set_ylabel(
-                    rf"$F_\lambda$ ({y_unit})",
+                    rf"$f_\lambda$ ({y_unit})",
                     fontsize=font_size["ylabel"],
                 )
 

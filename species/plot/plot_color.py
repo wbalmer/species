@@ -209,10 +209,10 @@ def plot_color_magnitude(
     # model_color = ("#234398", "#f6a432", "black")
 
     model_color = (
-        "tab:blue",
-        "tab:orange",
+        "cornflowerblue",
+        "tomato",
         "tab:green",
-        "tab:red",
+        "goldenrod",
         "tab:purple",
         "tab:brown",
         "tab:pink",
@@ -560,7 +560,7 @@ def plot_color_magnitude(
             planck_count += 1
 
     if empirical:
-        cmap = plt.cm.viridis
+        cmap = plt.cm.magma
 
         bounds, ticks, ticklabels = field_bounds_ticks(field_range, check_subclass)
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
@@ -597,7 +597,7 @@ def plot_color_magnitude(
                     cmap=cmap,
                     norm=norm,
                     s=50,
-                    alpha=0.7,
+                    # alpha=0.7,
                     edgecolor="none",
                     zorder=2,
                 )
@@ -636,7 +636,7 @@ def plot_color_magnitude(
                     marker="s",
                     ms=4,
                     linestyle="none",
-                    alpha=0.7,
+                    # alpha=0.7,
                     color="gray",
                     markeredgecolor="black",
                     label="Young/low-gravity",
@@ -894,7 +894,8 @@ def plot_color_magnitude(
                 ax1.legend(by_label.values(), by_label.keys(), **legend)
 
     if output is None:
-        plt.show()
+        # plt.show()
+        print("")
     else:
         print(f"\nOutput: {output}")
         plt.savefig(output, bbox_inches="tight")
@@ -1068,10 +1069,10 @@ def plot_color_color(
     # model_color = ("#234398", "#f6a432", "black")
 
     model_color = (
-        "tab:blue",
-        "tab:orange",
+        "cornflowerblue",
+        "tomato",
         "tab:green",
-        "tab:red",
+        "goldenrod",
         "tab:purple",
         "tab:brown",
         "tab:pink",
@@ -1510,7 +1511,7 @@ def plot_color_color(
             spectra_count += 1
 
     if empirical:
-        cmap = plt.cm.viridis
+        cmap = plt.cm.magma
 
         bounds, ticks, ticklabels = field_bounds_ticks(field_range, check_subclass)
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
@@ -1546,7 +1547,7 @@ def plot_color_color(
                     cmap=cmap,
                     norm=norm,
                     s=50,
-                    alpha=0.7,
+                    # alpha=0.7,
                     edgecolor="none",
                     zorder=2,
                 )
@@ -1585,7 +1586,7 @@ def plot_color_color(
                     marker="s",
                     ms=4,
                     linestyle="none",
-                    alpha=0.7,
+                    # alpha=0.7,
                     color="gray",
                     markeredgecolor="black",
                     label="Young/low-gravity",
@@ -1786,7 +1787,8 @@ def plot_color_color(
                 ax1.legend(by_label.values(), by_label.keys(), **legend)
 
     if output is None:
-        plt.show()
+        print("")
+        # plt.show()
     else:
         print(f"\nOutput: {output}")
         plt.savefig(output, bbox_inches="tight")

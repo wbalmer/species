@@ -417,32 +417,32 @@ def plot_spectrum(
     if residuals is not None and filters is not None:
         ax1.set_xlabel("")
         ax2.set_xlabel("")
-        ax3.set_xlabel(x_label, fontsize=11)
+        ax3.set_xlabel(x_label, )
 
     elif residuals is not None:
         ax1.set_xlabel("")
-        ax3.set_xlabel(x_label, fontsize=11)
+        ax3.set_xlabel(x_label, )
 
     elif filters is not None:
-        ax1.set_xlabel(x_label, fontsize=11)
+        ax1.set_xlabel(x_label, )
         ax2.set_xlabel("")
 
     else:
-        ax1.set_xlabel(x_label, fontsize=11)
+        ax1.set_xlabel(x_label, )
 
     if filters is not None:
-        ax2.set_ylabel(r"$T_\lambda$", fontsize=11)
+        ax2.set_ylabel(r"$T_\lambda$", )
 
     if residuals is not None:
         if quantity == "flux density":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=11)
+            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", )
 
         elif quantity == "flux":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=11)
+            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", )
 
     if quantity == "magnitude":
         scaling = 1.0
-        ax1.set_ylabel("Contrast (mag)", fontsize=11)
+        ax1.set_ylabel("Contrast (mag)", )
 
         if ylim is not None:
             ax1.set_ylim(ylim[0], ylim[1])
@@ -481,7 +481,7 @@ def plot_spectrum(
                         + r"}$ W m$^{-2}$)"
                     )
 
-            ax1.set_ylabel(ylabel, fontsize=11)
+            ax1.set_ylabel(ylabel, )
             ax1.set_ylim(ylim[0] / scaling, ylim[1] / scaling)
 
             if ylim[0] < 0.0:
@@ -493,11 +493,10 @@ def plot_spectrum(
             if quantity == "flux density":
                 ax1.set_ylabel(
                     rf"$F_\lambda$ ({y_unit})",
-                    fontsize=11,
                 )
 
             elif quantity == "flux":
-                ax1.set_ylabel(r"$\lambda$$F_\lambda$ (W m$^{-2}$)", fontsize=11)
+                ax1.set_ylabel(r"$\lambda$$F_\lambda$ (W m$^{-2}$)", )
 
             scaling = 1.0
 
@@ -1256,9 +1255,9 @@ def plot_spectrum(
 
     if title is not None:
         if filters:
-            ax2.set_title(title, y=1.02, fontsize=13)
+            ax2.set_title(title, y=1.02, )
         else:
-            ax1.set_title(title, y=1.02, fontsize=13)
+            ax1.set_title(title, y=1.02, )
 
     handles, labels = ax1.get_legend_handles_labels()
 
@@ -1283,7 +1282,7 @@ def plot_spectrum(
                         model_handles,
                         model_labels,
                         loc=legend[0],
-                        fontsize=10.0,
+                        # fontsize=10.0,
                         frameon=False,
                     )
                 else:
@@ -1298,7 +1297,6 @@ def plot_spectrum(
                         data_handles,
                         data_labels,
                         loc=legend[1],
-                        fontsize=8,
                         frameon=False,
                     )
                 else:
@@ -1308,7 +1306,7 @@ def plot_spectrum(
                 ax1.add_artist(leg_1)
 
         elif isinstance(legend, (str, tuple)):
-            ax1.legend(loc=legend, fontsize=8, frameon=False)
+            ax1.legend(loc=legend, frameon=False)
 
         else:
             ax1.legend(**legend)
@@ -1375,7 +1373,7 @@ def plot_spectrum(
     #     elif i == 1:
     #         ax1.text(filter_wavelength, 1e-2, r'H$\beta$', ha='center', va='center', fontsize=10, color='black')
     #     elif i == 2:
-    #         ax1.text(filter_wavelength, 1e-2, 'ALMA\nband 7 rms', ha='center', va='center', fontsize=8, color='black')
+    #         ax1.text(filter_wavelength, 1e-2, 'ALMA\nband 7 rms', ha='center', va='center', , color='black')
     #
     #     if i == 0:
     #         ax1.text(filter_wavelength, 1.4, 'Y', ha='center', va='center', fontsize=10, color='black')
@@ -1396,8 +1394,8 @@ def plot_spectrum(
     #     elif i == 8:
     #         ax1.text(filter_wavelength, 1.4, 'M$\'}$', ha='center', va='center', fontsize=10, color='black')
     #
-    # ax1.text(1.26, 0.58, 'VLT/SPHERE', ha='center', va='center', fontsize=8., color='slateblue', rotation=43.)
-    # ax1.text(2.5, 1.28, 'VLT/SINFONI', ha='left', va='center', fontsize=8., color='darkgray')
+    # ax1.text(1.26, 0.58, 'VLT/SPHERE', ha='center', va='center', ., color='slateblue', rotation=43.)
+    # ax1.text(2.5, 1.28, 'VLT/SINFONI', ha='left', va='center', ., color='darkgray')
 
     if output is None:
         pass

@@ -45,14 +45,6 @@
             "Cheetham et al. 2019, A&A, 622, 80"
         ]
     },
-    "HR 8799 e": {
-        "SPHERE_YJH": [
-            "hr8799e_sphere_yjh.dat",
-            null,
-            25.0,
-            "Zurlo et al. 2016, A&A, 587, 57"
-        ]
-    },
     "PDS 70 b": {
         "SPHERE_YJH": [
             "pds70b_sphere_yjh.dat",

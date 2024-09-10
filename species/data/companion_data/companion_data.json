@@ -161,18 +161,6 @@
             0.0777
         ],
         "app_mag": {
-            "MKO/NSFCam.J": [
-                19.04,
-                0.4
-            ],
-            "MKO/NSFCam.H": [
-                18.99,
-                0.21
-            ],
-            "MKO/NSFCam.K": [
-                18.67,
-                0.19
-            ],
             "Paranal/SPHERE.IRDIS_B_H": [
                 19.45,
                 0.29
@@ -258,10 +246,6 @@
                 15.52,
                 0.1
             ],
-            "Paranal/NACO.NB405": [
-                14.82,
-                0.18
-            ],
             "Keck/NIRC2.Ms": [
                 16.05,
                 0.3
@@ -329,10 +313,6 @@
             ],
             "Paranal/NACO.Lp": [
                 14.65,
-                0.11
-            ],
-            "Paranal/NACO.NB405": [
-                13.97,
                 0.11
             ],
             "Keck/NIRC2.Ms": [
@@ -403,10 +383,6 @@
                 14.55,
                 0.14
             ],
-            "Paranal/NACO.NB405": [
-                13.87,
-                0.15
-            ],
             "Keck/NIRC2.Ms": [
                 14.65,
                 0.35
@@ -470,10 +446,6 @@
             "Paranal/NACO.Lp": [
                 14.49,
                 0.21
-            ],
-            "Paranal/NACO.NB405": [
-                13.72,
-                0.2
             ]
         },
         "semi_major": [

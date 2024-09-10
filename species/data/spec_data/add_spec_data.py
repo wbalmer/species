@@ -12,6 +12,7 @@ from species.data.spec_data.spec_allers2013 import add_allers2013
 from species.data.spec_data.spec_bonnefoy2014 import add_bonnefoy2014
 from species.data.spec_data.spec_irtf import add_irtf
 from species.data.spec_data.spec_kesseli2017 import add_kesseli2017
+from species.data.spec_data.spec_sorahana2013 import add_sorahana2013
 from species.data.spec_data.spec_spex import add_spex
 from species.data.spec_data.spec_vega import add_vega
 
@@ -56,6 +57,9 @@ def add_spec_library(
 
     elif spec_library[0:12] == "kesseli+2017":
         add_kesseli2017(input_path, database)
+
+    elif spec_library[0:14] == "sorahana+2013":
+        add_sorahana2013(input_path, database)
 
     elif spec_library[0:5] == "spex":
         add_spex(input_path, database)

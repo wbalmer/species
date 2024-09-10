@@ -58,6 +58,7 @@ def plot_spectrum(
     grid_hspace: float = 0.1,
     inc_model_name: bool = False,
     units: Tuple[str, str] = ("um", "W m-2 um-1"),
+    font_size: Optional[Dict[str, float]] = None,
 ) -> mpl.figure.Figure:
     """
     Function for plotting a spectral energy distribution and combining
@@ -173,6 +174,13 @@ def plot_spectrum(
         Tuple with the wavelength and flux units. Supported
         units can be found in the docstring of
         :func:`~species.util.data_util.convert_units`.
+    font_size : dict(str, float), None
+        Dictionary with the font sizes. The keys can be set to
+        'xlabel', 'ylabel', 'title', and 'legend'. The values
+        should be set to the font sizes. Default font size are
+        used when setting the argument to ``None``. The legend
+        font size is not used if it is also set with the
+        ``legend`` parameter.
 
     Returns
     -------
@@ -414,35 +422,52 @@ def plot_spectrum(
     else:
         y_unit = units[1]
 
+    if font_size is None:
+        font_size = {}
+
+    if "xlabel" not in font_size:
+        font_size["xlabel"] = 11.
+
+    if "ylabel" not in font_size:
+        font_size["ylabel"] = 11.
+
+    if "title" not in font_size:
+        font_size["title"] = 13.
+
+    if "legend" not in font_size:
+        font_size["legend"] = 9.
+
+    print(f"Font sizes: {font_size}")
+
     if residuals is not None and filters is not None:
         ax1.set_xlabel("")
         ax2.set_xlabel("")
-        ax3.set_xlabel(x_label, )
+        ax3.set_xlabel(x_label, fontsize=font_size["xlabel"])
 
     elif residuals is not None:
         ax1.set_xlabel("")
-        ax3.set_xlabel(x_label, )
+        ax3.set_xlabel(x_label, fontsize=font_size["xlabel"])
 
     elif filters is not None:
-        ax1.set_xlabel(x_label, )
+        ax1.set_xlabel(x_label, fontsize=font_size["xlabel"])
         ax2.set_xlabel("")
 
     else:
-        ax1.set_xlabel(x_label, )
+        ax1.set_xlabel(x_label, fontsize=font_size["xlabel"])
 
     if filters is not None:
-        ax2.set_ylabel(r"$T_\lambda$", )
+        ax2.set_ylabel(r"$T_\lambda$", fontsize=font_size["ylabel"])
 
     if residuals is not None:
         if quantity == "flux density":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", )
+            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
 
         elif quantity == "flux":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", )
+            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
 
     if quantity == "magnitude":
         scaling = 1.0
-        ax1.set_ylabel("Contrast (mag)", )
+        ax1.set_ylabel("Contrast (mag)", fontsize=font_size["ylabel"])
 
         if ylim is not None:
             ax1.set_ylim(ylim[0], ylim[1])
@@ -481,7 +506,7 @@ def plot_spectrum(
                         + r"}$ W m$^{-2}$)"
                     )
 
-            ax1.set_ylabel(ylabel, )
+            ax1.set_ylabel(ylabel, fontsize=font_size["ylabel"])
             ax1.set_ylim(ylim[0] / scaling, ylim[1] / scaling)
 
             if ylim[0] < 0.0:
@@ -493,10 +518,11 @@ def plot_spectrum(
             if quantity == "flux density":
                 ax1.set_ylabel(
                     rf"$F_\lambda$ ({y_unit})",
+                    fontsize=font_size["ylabel"],
                 )
 
             elif quantity == "flux":
-                ax1.set_ylabel(r"$\lambda$$F_\lambda$ (W m$^{-2}$)", )
+                ax1.set_ylabel(r"$\lambda$$F_\lambda$ (W m$^{-2}$)", fontsize=font_size["ylabel"])
 
             scaling = 1.0
 
@@ -535,13 +561,13 @@ def plot_spectrum(
             wavelength = box_item.wavelength
             flux = box_item.flux
 
-            data_in = np.column_stack([wavelength, flux])
-            data_out = convert_units(data_in, units, convert_from=False)
-
-            wavelength = data_out[:, 0]
-            flux = data_out[:, 1]
-
             if isinstance(wavelength[0], (np.float32, np.float64)):
+                data_in = np.column_stack([wavelength, flux])
+                data_out = convert_units(data_in, units, convert_from=False)
+
+                wavelength = data_out[:, 0]
+                flux = data_out[:, 1]
+
                 data = np.array(flux, dtype=np.float64)
                 flux_masked = np.ma.array(data, mask=np.isnan(data))
 
@@ -597,8 +623,14 @@ def plot_spectrum(
                     )
 
             elif isinstance(wavelength[0], (np.ndarray)):
-                for i, item in enumerate(wavelength):
-                    data = np.array(flux[i], dtype=np.float64)
+                for i in range(len(wavelength)):
+                    data_in = np.column_stack([wavelength[i], flux[i]])
+                    data_out = convert_units(data_in, units, convert_from=False)
+
+                    wavelength = data_out[:, 0]
+                    flux = data_out[:, 1]
+
+                    data = np.array(flux, dtype=np.float64)
                     flux_masked = np.ma.array(data, mask=np.isnan(data))
 
                     if isinstance(box_item.name[i], bytes):
@@ -607,10 +639,10 @@ def plot_spectrum(
                         label = box_item.name[i]
 
                     if quantity == "flux":
-                        flux_scaling = item
+                        flux_scaling = wavelength
 
                     ax1.plot(
-                        item, flux_scaling * flux_masked / scaling, lw=0.5, label=label
+                        wavelength, flux_scaling * flux_masked / scaling, lw=0.5, label=label
                     )
 
         elif isinstance(box_item, list):
@@ -874,10 +906,23 @@ def plot_spectrum(
                     fwhm_micron = transmission.filter_fwhm()
 
                     if isinstance(box_item.flux[filter_item][0], np.ndarray):
-                        raise NotImplementedError(
-                            "Unit conversion has not yet been implemented! "
-                            "Please open an issue on Github."
+                        wavel_array = np.full(
+                            box_item.flux[filter_item].shape[1], wavel_micron
                         )
+
+                        data_in = np.column_stack(
+                            [
+                                wavel_array,
+                                box_item.flux[filter_item][0],
+                                box_item.flux[filter_item][1],
+                            ]
+                        )
+
+                        data_out = convert_units(data_in, units, convert_from=False)
+
+                        wavelength = data_out[:, 0]
+                        flux_conv = data_out[:, 1]
+                        sigma_conv = data_out[:, 2]
 
                     else:
                         data_in = np.column_stack(
@@ -900,7 +945,7 @@ def plot_spectrum(
                     data_out = convert_units(data_in, units, convert_from=False)
 
                     # Absolute value because could be negative when frequency
-                    fwhm_up = np.abs(data_out[0, 0] - wavelength[0])
+                    hwhm_up = np.abs(data_out[0, 0] - wavelength[0])
 
                     # Convert FWHM of filter to requested units
                     data_in = np.column_stack(
@@ -909,18 +954,14 @@ def plot_spectrum(
                     data_out = convert_units(data_in, units, convert_from=False)
 
                     # Absolute value because could be negative when frequency
-                    fwhm_down = np.abs(data_out[0, 0] - wavelength[0])
+                    hwhm_down = np.abs(data_out[0, 0] - wavelength[0])
 
-                    # Calculate the average, which will be identical
-                    # to fwhm_up and fwhm_down when working with
-                    # wavelengths but fwhm_up and fwhm_down will
-                    # be different when convertin a FWHM from
+                    # Calculate the FWHM, which will be identical
+                    # to 2*hwhm_up and 2*hwhm_down when working with
+                    # wavelengths but hwhm_up and hwhm_down will
+                    # be different when converting a FWHM from
                     # wavelength to frequency
-                    fwhm = (fwhm_up + fwhm_down) / 2.0
-
-                    if plot_kwargs[j] and filter_item in plot_kwargs[j]:
-                        if "label" in plot_kwargs[j][filter_item]:
-                            labels_data.append(plot_kwargs[j][filter_item]["label"])
+                    fwhm = (hwhm_up + hwhm_down)
 
                     if not plot_kwargs[j] or filter_item not in plot_kwargs[j]:
                         if not plot_kwargs[j]:
@@ -932,12 +973,13 @@ def plot_spectrum(
                         scale_tmp = flux_scaling / scaling
 
                         if isinstance(box_item.flux[filter_item][0], np.ndarray):
-                            for i in range(box_item.flux[filter_item].shape[1]):
+                            for phot_idx in range(box_item.flux[filter_item].shape[1]):
                                 plot_obj = ax1.errorbar(
-                                    wavelength,
-                                    scale_tmp * box_item.flux[filter_item][0, i],
+                                    wavelength[phot_idx],
+                                    scale_tmp * box_item.flux[filter_item][0, phot_idx],
                                     xerr=fwhm / 2.0,
-                                    yerr=scale_tmp * box_item.flux[filter_item][1, i],
+                                    yerr=scale_tmp
+                                    * box_item.flux[filter_item][1, phot_idx],
                                     marker="s",
                                     ms=5,
                                     zorder=3,
@@ -970,28 +1012,47 @@ def plot_spectrum(
                             if not isinstance(plot_kwargs[j][filter_item], list):
                                 raise ValueError(
                                     f"A list with {box_item.flux[filter_item].shape[1]} "
-                                    f"dictionaries are required because the filter "
+                                    f"dictionaries is required because the filter "
                                     f"{filter_item} has {box_item.flux[filter_item].shape[1]} "
                                     f"values."
                                 )
 
-                            for i in range(box_item.flux[filter_item].shape[1]):
-                                if "zorder" not in plot_kwargs[j][filter_item][i]:
-                                    plot_kwargs[j][filter_item][i]["zorder"] = 3.0
+                            for phot_idx in range(box_item.flux[filter_item].shape[1]):
+                                if (
+                                    "zorder"
+                                    not in plot_kwargs[j][filter_item][phot_idx]
+                                ):
+                                    plot_kwargs[j][filter_item][phot_idx][
+                                        "zorder"
+                                    ] = 3.0
+
+                                if plot_kwargs[j] and filter_item in plot_kwargs[j]:
+                                    if "label" in plot_kwargs[j][filter_item][phot_idx]:
+                                        labels_data.append(
+                                            plot_kwargs[j][filter_item][phot_idx][
+                                                "label"
+                                            ]
+                                        )
 
                                 ax1.errorbar(
-                                    wavelength,
+                                    wavelength[phot_idx],
                                     flux_scaling
-                                    * box_item.flux[filter_item][0, i]
+                                    * box_item.flux[filter_item][0, phot_idx]
                                     / scaling,
                                     xerr=fwhm / 2.0,
                                     yerr=flux_scaling
-                                    * box_item.flux[filter_item][1, i]
+                                    * box_item.flux[filter_item][1, phot_idx]
                                     / scaling,
-                                    **plot_kwargs[j][filter_item][i],
+                                    **plot_kwargs[j][filter_item][phot_idx],
                                 )
 
                         else:
+                            if plot_kwargs[j] and filter_item in plot_kwargs[j]:
+                                if "label" in plot_kwargs[j][filter_item]:
+                                    labels_data.append(
+                                        plot_kwargs[j][filter_item]["label"]
+                                    )
+
                             if box_item.flux[filter_item][1] == 0.0:
                                 if "zorder" not in plot_kwargs[j][filter_item]:
                                     plot_kwargs[j][filter_item]["zorder"] = 3.0
@@ -1022,28 +1083,66 @@ def plot_spectrum(
         elif isinstance(box_item, SynphotBox):
             obj_index = None
 
-            for i, find_item in enumerate(boxes):
+            for box_idx, find_item in enumerate(boxes):
                 if isinstance(find_item, ObjectBox):
-                    obj_index = i
+                    obj_index = box_idx
                     break
 
-            for item in box_item.flux:
-                transmission = ReadFilter(item)
-                wavelength = transmission.mean_wavelength()
-                fwhm = transmission.filter_fwhm()
+            for filter_item in box_item.flux:
+                transmission = ReadFilter(filter_item)
+                wavel_micron = transmission.mean_wavelength()
+                fwhm_micron = transmission.filter_fwhm()
+
+                data_in = np.column_stack(
+                    [
+                        [wavel_micron],
+                        [box_item.flux[filter_item]],
+                        0.0,
+                    ]
+                )
+
+                data_out = convert_units(data_in, units, convert_from=False)
+
+                wavelength = data_out[:, 0]
+                flux_conv = data_out[:, 1]
+
+                # Convert FWHM of filter to requested units
+                data_in = np.column_stack(
+                    [[wavel_micron + fwhm_micron / 2.0], [1.0]]
+                )
+                data_out = convert_units(data_in, units, convert_from=False)
+
+                # Absolute value because could be negative when frequency
+                hwhm_up = np.abs(data_out[0, 0] - wavelength[0])
+
+                # Convert FWHM of filter to requested units
+                data_in = np.column_stack(
+                    [[wavel_micron - fwhm_micron / 2.0], [1.0]]
+                )
+                data_out = convert_units(data_in, units, convert_from=False)
+
+                # Absolute value because could be negative when frequency
+                hwhm_down = np.abs(data_out[0, 0] - wavelength[0])
+
+                # Calculate the FWHM, which will be identical
+                # to 2*hwhm_up and 2*hwhm_down when working with
+                # wavelengths but hwhm_up and hwhm_down will
+                # be different when converting a FWHM from
+                # wavelength to frequency
+                fwhm = (hwhm_up + hwhm_down)
 
                 if quantity == "flux":
                     flux_scaling = wavelength
 
-                if plot_kwargs[j] is not None and item in plot_kwargs[j]:
-                    kwargs_copy = plot_kwargs[j][item].copy()
+                if plot_kwargs[j] is not None and filter_item in plot_kwargs[j]:
+                    kwargs_copy = plot_kwargs[j][filter_item].copy()
 
                     if "zorder" not in kwargs_copy:
                         kwargs_copy["zorder"] = 4.0
 
                     ax1.errorbar(
                         wavelength,
-                        flux_scaling * box_item.flux[item] / scaling,
+                        flux_scaling * flux_conv / scaling,
                         xerr=fwhm / 2.0,
                         yerr=None,
                         **kwargs_copy,
@@ -1052,11 +1151,11 @@ def plot_spectrum(
                 elif (
                     obj_index is None
                     or not plot_kwargs[obj_index]
-                    or item not in plot_kwargs[obj_index]
+                    or filter_item not in plot_kwargs[obj_index]
                 ):
                     ax1.errorbar(
                         wavelength,
-                        flux_scaling * box_item.flux[item] / scaling,
+                        flux_scaling * flux_conv / scaling,
                         xerr=fwhm / 2.0,
                         yerr=None,
                         alpha=0.7,
@@ -1067,12 +1166,12 @@ def plot_spectrum(
                     )
 
                 else:
-                    if isinstance(plot_kwargs[obj_index][item], list):
+                    if isinstance(plot_kwargs[obj_index][filter_item], list):
                         # In case of multiple photometry values for the
                         # same filter, use the plot_kwargs of the first
                         # data point
 
-                        kwargs_copy = plot_kwargs[obj_index][item][0].copy()
+                        kwargs_copy = plot_kwargs[obj_index][filter_item][0].copy()
 
                         if "label" in kwargs_copy:
                             del kwargs_copy["label"]
@@ -1082,7 +1181,7 @@ def plot_spectrum(
 
                         ax1.errorbar(
                             wavelength,
-                            flux_scaling * box_item.flux[item] / scaling,
+                            flux_scaling * flux_conv / scaling,
                             xerr=fwhm / 2.0,
                             yerr=None,
                             mfc="white",
@@ -1090,7 +1189,7 @@ def plot_spectrum(
                         )
 
                     else:
-                        kwargs_copy = plot_kwargs[obj_index][item].copy()
+                        kwargs_copy = plot_kwargs[obj_index][filter_item].copy()
 
                         if "label" in kwargs_copy:
                             del kwargs_copy["label"]
@@ -1103,7 +1202,7 @@ def plot_spectrum(
 
                         ax1.errorbar(
                             wavelength,
-                            flux_scaling * box_item.flux[item] / scaling,
+                            flux_scaling * flux_conv / scaling,
                             xerr=fwhm / 2.0,
                             yerr=None,
                             mfc="white",
@@ -1111,8 +1210,8 @@ def plot_spectrum(
                         )
 
     if filters is not None:
-        for i, item in enumerate(filters):
-            transmission = ReadFilter(item)
+        for filter_item in filters:
+            transmission = ReadFilter(filter_item)
             data = transmission.get_filter()
 
             data_in = np.ones(data.shape)
@@ -1238,11 +1337,20 @@ def plot_spectrum(
 
         ax3.axhline(0.0, ls="--", lw=0.7, color="gray", dashes=(2, 4), zorder=0.5)
 
-        if res_lim > 5.0 or (
-            ylim_res is not None and ylim_res[0] < -5.0 and ylim_res[1] > 5.0
-        ):
-            ax3.axhline(-5.0, ls=":", lw=0.7, color="gray", dashes=(1, 4), zorder=0.5)
-            ax3.axhline(5.0, ls=":", lw=0.7, color="gray", dashes=(1, 4), zorder=0.5)
+        sigma_line = [5.0, 10.0, 15.0, 20.0]
+
+        for sigma_item in sigma_line:
+            if res_lim > sigma_item or (
+                ylim_res is not None
+                and ylim_res[0] < -sigma_item
+                and ylim_res[1] > sigma_item
+            ):
+                ax3.axhline(
+                    -sigma_item, ls=":", lw=0.7, color="gray", dashes=(1, 4), zorder=0.5
+                )
+                ax3.axhline(
+                    sigma_item, ls=":", lw=0.7, color="gray", dashes=(1, 4), zorder=0.5
+                )
 
         if ylim_res is None:
             ax3.set_ylim(-res_lim, res_lim)
@@ -1255,9 +1363,9 @@ def plot_spectrum(
 
     if title is not None:
         if filters:
-            ax2.set_title(title, y=1.02, )
+            ax2.set_title(title, y=1.02, fontsize=font_size["title"])
         else:
-            ax1.set_title(title, y=1.02, )
+            ax1.set_title(title, y=1.02, fontsize=font_size["title"])
 
     handles, labels = ax1.get_legend_handles_labels()
 
@@ -1282,10 +1390,13 @@ def plot_spectrum(
                         model_handles,
                         model_labels,
                         loc=legend[0],
-                        # fontsize=10.0,
+                        fontsize=font_size["legend"],
                         frameon=False,
                     )
                 else:
+                    if "fontsize" not in legend[0]:
+                        legend[0]["fontsize"] = font_size["legend"]
+
                     leg_1 = ax1.legend(model_handles, model_labels, **legend[0])
 
             else:
@@ -1297,18 +1408,25 @@ def plot_spectrum(
                         data_handles,
                         data_labels,
                         loc=legend[1],
+                        fontsize=font_size["legend"],
                         frameon=False,
                     )
                 else:
+                    if "fontsize" not in legend[1]:
+                        legend[1]["fontsize"] = font_size["legend"]
+
                     ax1.legend(data_handles, data_labels, **legend[1])
 
             if leg_1 is not None:
                 ax1.add_artist(leg_1)
 
         elif isinstance(legend, (str, tuple)):
-            ax1.legend(loc=legend, frameon=False)
+            ax1.legend(loc=legend, fontsize=font_size["legend"], frameon=False)
 
         else:
+            if "fontsize" not in legend:
+                legend["fontsize"] = font_size["legend"]
+
             ax1.legend(**legend)
 
     # if scale[0] == "log":

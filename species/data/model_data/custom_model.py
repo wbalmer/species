@@ -2,15 +2,15 @@
 Module for adding a custom grid of model spectra to the database.
 """
 
-import os
 import warnings
 
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import h5py
-import spectres
 import numpy as np
 
+from scipy.interpolate import interp1d
 from typeguard import typechecked
 
 from species.util.core_util import print_section
@@ -21,7 +21,7 @@ from species.util.spec_util import create_wavelengths
 @typechecked
 def add_custom_model_grid(
     model_name: str,
-    data_path: str,
+    data_path: Union[str, Path],
     parameters: List[str],
     database: h5py._hl.files.File,
     wavel_range: Optional[Tuple[float, float]],
@@ -50,17 +50,19 @@ def add_custom_model_grid(
     model_name : str
         Name of the model grid. Should be identical to the model
         name that is included in the filenames.
-    data_path : str
+    data_path : str, Path
         Path where the files with the model spectra are located.
+        Either a relative or absolute path. Either a string or
+        a ``Path`` object from ``pathlib``.
     parameters : list(str)
         List with the model parameters. The following parameters
         are supported: ``teff`` (for :math:`T_\\mathrm{eff}`),
         ``logg`` (for :math:`\\log\\,g`), ``feh`` (for [Fe/H]),
-        ``c_o_ratio`` (for C/O), ``fsed`` (for
-        :math:`f_\\mathrm{sed}`), ``log_kzz`` (for
-        :math:`\\log\\,K_\\mathrm{zz}`), and ``ad_index`` (for
-        :math:`\\gamma_\\mathrm{ad}`). Please contact the code
-        maintainer if support for other parameters should be added.
+        ``co`` (for C/O), ``fsed`` (for :math:`f_\\mathrm{sed}`),
+        ``logkzz`` (for :math:`\\log\\,K_\\mathrm{zz}`), and
+        ``adindex`` (for :math:`\\gamma_\\mathrm{ad}`). Please
+        contact the code maintainer if support for other parameters
+        should be added.
     database : h5py._hl.files.File
         Database.
     wavel_range : tuple(float, float), None
@@ -108,8 +110,11 @@ def add_custom_model_grid(
     else:
         feh = None
 
-    if "c_o_ratio" in parameters:
+    if "co" in parameters:
         c_o_ratio = []
+        co_index = parameters.index('co')
+        parameters[co_index] = 'c_o_ratio'
+
     else:
         c_o_ratio = None
 
@@ -118,12 +123,12 @@ def add_custom_model_grid(
     else:
         fsed = None
 
-    if "log_kzz" in parameters:
+    if "logkzz" in parameters:
         log_kzz = []
     else:
         log_kzz = None
 
-    if "ad_index" in parameters:
+    if "adindex" in parameters:
         ad_index = []
     else:
         ad_index = None
@@ -149,55 +154,73 @@ def add_custom_model_grid(
     print_message = ""
     count = 0
 
-    for _, _, file_list in os.walk(data_path):
-        for filename in sorted(file_list):
-            if filename[: len(model_name)] == model_name:
-                file_split = filename.split("_")
+    data_path = Path(data_path)
+    model_files = sorted(data_path.glob("*"))
 
-                param_index = file_split.index("teff") + 1
-                teff_val = float(file_split[param_index])
+    for file_item in model_files:
+        if file_item.stem[: len(model_name)] == model_name:
+            file_split = file_item.stem.split("_")
 
-                if teff_range is not None:
-                    if teff_val < teff_range[0] or teff_val > teff_range[1]:
-                        continue
+            param_index = file_split.index("teff") + 1
+            teff_val = float(file_split[param_index])
 
-                teff.append(teff_val)
+            if teff_range is not None:
+                if teff_val < teff_range[0] or teff_val > teff_range[1]:
+                    continue
 
-                if logg is not None:
-                    param_index = file_split.index("logg") + 1
-                    logg.append(float(file_split[param_index]))
+            teff.append(teff_val)
 
-                if feh is not None:
-                    param_index = file_split.index("feh") + 1
-                    feh.append(float(file_split[param_index]))
+            if logg is not None:
+                param_index = file_split.index("logg") + 1
+                logg.append(float(file_split[param_index]))
 
-                if c_o_ratio is not None:
-                    param_index = file_split.index("co") + 1
-                    c_o_ratio.append(float(file_split[param_index]))
+            if feh is not None:
+                param_index = file_split.index("feh") + 1
+                feh.append(float(file_split[param_index]))
 
-                if fsed is not None:
-                    param_index = file_split.index("fsed") + 1
-                    fsed.append(float(file_split[param_index]))
+            if c_o_ratio is not None:
+                param_index = file_split.index("co") + 1
+                c_o_ratio.append(float(file_split[param_index]))
 
-                if log_kzz is not None:
-                    param_index = file_split.index("logkzz") + 1
-                    log_kzz.append(float(file_split[param_index]))
+            if fsed is not None:
+                param_index = file_split.index("fsed") + 1
+                fsed.append(float(file_split[param_index]))
 
-                if ad_index is not None:
-                    param_index = file_split.index("adindex") + 1
-                    ad_index.append(float(file_split[param_index]))
+            if log_kzz is not None:
+                param_index = file_split.index("logkzz") + 1
+                log_kzz.append(float(file_split[param_index]))
 
-                empty_message = len(print_message) * " "
-                print(f"\r{empty_message}", end="")
+            if ad_index is not None:
+                param_index = file_split.index("adindex") + 1
+                ad_index.append(float(file_split[param_index]))
 
-                print_message = f"Adding {model_name} model spectra... {filename}"
-                print(f"\r{print_message}", end="")
+            empty_message = len(print_message) * " "
+            print(f"\r{empty_message}", end="")
 
-                data_wavel, data_flux = np.loadtxt(
-                    os.path.join(data_path, filename), unpack=True
-                )
+            print_message = f"Adding {model_name} model spectra... {file_item}"
+            print(f"\r{print_message}", end="")
 
-                if wavel_range is None:
+            if file_item.suffix == ".npy":
+                data = np.load(str(file_item))
+                data_wavel = data[:, 0]
+                data_flux = data[:, 1]
+
+            else:
+                data_wavel, data_flux = np.loadtxt(str(file_item), unpack=True)
+
+            if wavel_range is None:
+                if wavelength is None:
+                    wavelength = np.copy(data_wavel)  # (um)
+
+                    if np.all(np.diff(wavelength) < 0):
+                        raise ValueError(
+                            "The wavelengths are not all sorted by increasing value."
+                        )
+
+                flux.append(data_flux)  # (W m-2 um-1)
+
+            else:
+                if not resample_spectra:
                     if wavelength is None:
                         wavelength = np.copy(data_wavel)  # (um)
 
@@ -206,47 +229,29 @@ def add_custom_model_grid(
                                 "The wavelengths are not all sorted by increasing value."
                             )
 
-                    flux.append(data_flux)  # (W m-2 um-1)
+                        wavel_select = (wavel_range[0] < wavelength) & (
+                            wavelength < wavel_range[1]
+                        )
+                        wavelength = wavelength[wavel_select]
+
+                    flux.append(data_flux[wavel_select])  # (W m-2 um-1)
 
                 else:
-                    if not resample_spectra:
-                        if wavelength is None:
-                            wavelength = np.copy(data_wavel)  # (um)
+                    flux_interp = interp1d(data_wavel, data_flux)
+                    flux_resample = flux_interp(wavelength)
 
-                            if np.all(np.diff(wavelength) < 0):
-                                raise ValueError(
-                                    "The wavelengths are not all sorted by increasing value."
-                                )
-
-                            wavel_select = (wavel_range[0] < wavelength) & (
-                                wavelength < wavel_range[1]
-                            )
-                            wavelength = wavelength[wavel_select]
-
-                        flux.append(data_flux[wavel_select])  # (W m-2 um-1)
-
-                    else:
-                        flux_resample = spectres.spectres(
-                            wavelength,
-                            data_wavel,
-                            data_flux,
-                            spec_errs=None,
-                            fill=np.nan,
-                            verbose=False,
+                    if np.isnan(np.sum(flux_resample)):
+                        raise ValueError(
+                            f"Resampling is only possible if the new wavelength "
+                            f"range ({wavelength[0]} - {wavelength[-1]} um) falls "
+                            f"sufficiently far within the wavelength range "
+                            f"({data_wavel[0]} - {data_wavel[-1]} um) of the input "
+                            f"spectra."
                         )
 
-                        if np.isnan(np.sum(flux_resample)):
-                            raise ValueError(
-                                f"Resampling is only possible if the new wavelength "
-                                f"range ({wavelength[0]} - {wavelength[-1]} um) falls "
-                                f"sufficiently far within the wavelength range "
-                                f"({data_wavel[0]} - {data_wavel[-1]} um) of the input "
-                                f"spectra."
-                            )
+                    flux.append(flux_resample)  # (W m-2 um-1)
 
-                        flux.append(flux_resample)  # (W m-2 um-1)
-
-                count += 1
+            count += 1
 
     empty_message = len(print_message) * " "
     print(f"\r{empty_message}", end="")

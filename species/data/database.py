@@ -5,8 +5,6 @@ Module with functionalities for reading and writing of data.
 import json
 import os
 import sys
-
-# import urllib.error
 import warnings
 
 from configparser import ConfigParser
@@ -588,6 +586,12 @@ class Database:
 
         from species.data.isochrone_data.add_isochrone import add_isochrone_grid
 
+        print_section("Add isochrone grid")
+
+        print(f"Evolutionary model: {model}")
+        print(f"File name: {filename}")
+        print(f"Database tag: {tag}")
+
         if model == "phoenix":
             warnings.warn(
                 "Please set model='manual' instead of "
@@ -746,7 +750,7 @@ class Database:
     def add_custom_model(
         self,
         model: str,
-        data_path: str,
+        data_path: Union[str, Path],
         parameters: List[str],
         wavel_range: Optional[Tuple[float, float]] = None,
         wavel_sampling: Optional[float] = None,
@@ -757,36 +761,39 @@ class Database:
         database. The spectra are read from the ``data_path`` and
         should contain the ``model_name`` and ``parameters`` in
         the filenames in the following format example:
-        `model-name_teff_1000_logg_4.0_feh_0.0_spec.dat`. The
+        `model-name_teff_1000_logg_4.0_feh_0.0_spec.dat` or
+        `model-name_teff_1000_logg_4.0_feh_0.0_spec.npy`. The
         list with ``parameters`` should contain the same parameters
-        as are included in the filename. Each datafile should contain
-        two columns with the wavelengths in :math:`\\mu\\text{m}`
-        and the fluxes in
+        as are included in the filenames. Each datafile should
+        contain two columns with the wavelengths in
+        :math:`\\mu\\text{m}` and the fluxes in
         :math:`\\text{W} \\text{m}^{-2} \\mu\\text{m}^{-1}`. Each file
         should contain the same number and values of wavelengths. The
-        wavelengths should be logarithmically sampled, so at a constant
-        resolution, :math:`\\lambda/\\Delta\\lambda`. If not, then the
+        wavelengths should be logarithmically spaced, so at a constant
+        :math:`\\lambda/\\Delta\\lambda`. If not, then the
         ``wavel_range`` and ``wavel_sampling`` parameters should be
-        used such that the wavelengths are resampled when reading the
-        data into the ``species`` database.
+        used such that the wavelengths are resampled.
 
         Parameters
         ----------
         model : str
             Name of the model grid. Should be identical to the model
             name that is used in the filenames.
-        data_path : str
+        data_path : str, Path
             Path where the files with the model spectra are located.
-            It is best to provide an absolute path to the folder.
+            Either a relative or absolute path. Either a string or
+            a ``Path`` object from ``pathlib``. The model spectra
+            can be stored as NumPy binary files (.npy) or plain
+            text files.
         parameters : list(str)
             List with the model parameters. The following parameters
             are supported: ``teff`` (for :math:`T_\\mathrm{eff}`),
             ``logg`` (for :math:`\\log\\,g`), ``feh`` (for [Fe/H]),
-            ``c_o_ratio`` (for C/O), ``fsed`` (for
-            :math:`f_\\mathrm{sed}`), ``log_kzz`` (for
-            :math:`\\log\\,K_\\mathrm{zz}`), and ``ad_index`` (for
-            :math:`\\gamma_\\mathrm{ad}`). Please contact the code
-            maintainer if support for other parameters should be added.
+            ``co`` (for C/O), ``fsed`` (for :math:`f_\\mathrm{sed}`),
+            ``logkzz`` (for :math:`\\log\\,K_\\mathrm{zz}`), and
+            ``adindex`` (for :math:`\\gamma_\\mathrm{ad}`). Please
+            contact the code maintainer if support for other
+            parameters should be added.
         wavel_range : tuple(float, float), None
             Wavelength range (:math:`\\mu\\text{m}`) that will be
             stored in the database. The full wavelength range is used
@@ -882,8 +889,11 @@ class Database:
             ``flux_density`` can be used in case the magnitudes and/or
             filter profiles are not available. In that case, the fluxes
             can still be selected with ``inc_phot`` in
-            :class:`~species.fit.fit_model.FitModel`. The argument
-            of ``flux_density`` is ignored if set to ``None``.
+            :class:`~species.fit.fit_model.FitModel`. The
+            ``flux_density`` can also be used for an upper limit on a
+            photometric flux, by setting the flux to zero and the
+            uncertainty to the 1:math:`\\sigma` upper limit. The
+            argument of ``flux_density`` is ignored if set to ``None``.
         spectrum : dict, None
             Dictionary with the spectrum, optional covariance matrix,
             and resolving power of the instrument. The input data
@@ -1284,7 +1294,10 @@ class Database:
                                 and hdulist[0].header["INSTRU"] == "GRAVITY"
                             ):
                                 # Read data from a FITS file with the GRAVITY format
-                                gravity_object = hdulist[0].header["OBJECT"]
+                                if "OBJECT" in hdulist[0].header:
+                                    gravity_object = hdulist[0].header["OBJECT"]
+                                else:
+                                    gravity_object = None
 
                                 if verbose:
                                     print("   - GRAVITY spectrum:")
@@ -1448,7 +1461,10 @@ class Database:
                                 and hdulist[0].header["INSTRU"] == "GRAVITY"
                             ):
                                 # Read data from a FITS file with the GRAVITY format
-                                gravity_object = hdulist[0].header["OBJECT"]
+                                if "OBJECT" in hdulist[0].header:
+                                    gravity_object = hdulist[0].header["OBJECT"]
+                                else:
+                                    gravity_object = None
 
                                 if verbose:
                                     print("   - GRAVITY covariance matrix:")
@@ -1498,10 +1514,11 @@ class Database:
                                                 if np.all(np.diag(data) == 1.0):
                                                     warnings.warn(corr_warn)
 
-                                                    read_cov[
-                                                        spec_item
-                                                    ] = correlation_to_covariance(
-                                                        data, read_spec[spec_item][:, 2]
+                                                    read_cov[spec_item] = (
+                                                        correlation_to_covariance(
+                                                            data,
+                                                            read_spec[spec_item][:, 2],
+                                                        )
                                                     )
 
                                                 else:
@@ -1895,6 +1912,7 @@ class Database:
     @typechecked
     def add_photometry(self, phot_library: str) -> None:
         """
+        Function for adding a photometry library to the database.
         Parameters
         ----------
         phot_library : str
@@ -2107,62 +2125,54 @@ class Database:
 
         from species.data.spec_data.add_spec_data import add_spec_library
 
+        print_section("Add spectral library")
+
+        print(f"Database tag: {spec_library}")
+        print(f"Spectral types: {sptypes}")
+
         with h5py.File(self.database, "a") as hdf5_file:
             if f"spectra/{spec_library}" in hdf5_file:
-                del hdf5_file["spectra/" + spec_library]
+                del hdf5_file[f"spectra/{spec_library}"]
 
             add_spec_library(self.data_folder, hdf5_file, spec_library, sptypes)
 
     @typechecked
     def add_samples(
         self,
+        tag: str,
         sampler: str,
         samples: np.ndarray,
         ln_prob: np.ndarray,
-        tag: str,
         modelpar: List[str],
-        bounds: Dict,
-        normal_prior: Dict,
-        ln_evidence: Optional[Tuple[float, float]] = None,
-        mean_accept: Optional[float] = None,
-        spectrum: Optional[Tuple[str, str]] = None,
-        parallax: Optional[float] = None,
+        bounds: Dict[str, Tuple[float, float]],
+        normal_prior: Dict[str, Tuple[float, float]],
+        fixed_param: Dict[str, float],
         spec_labels: Optional[List[str]] = None,
         attr_dict: Optional[Dict] = None,
     ):
         """
-        This function stores the posterior samples from classes
-        such as :class:`~species.fit.fit_model.FitModel`
+        This function stores the posterior samples produced
+        by :class:`~species.fit.fit_model.FitModel`
         in the database, including some additional attributes.
 
         Parameters
         ----------
+        tag : str
+            Database tag.
         sampler : str
-            Sampler ('emcee', 'multinest', or 'ultranest').
+            Sampler ('emcee', 'multinest', 'ultranest', 'dynesty').
         samples : np.ndarray
             Samples of the posterior.
         ln_prob : np.ndarray
-            Log posterior for each sample.
-        tag : str
-            Database tag.
+            Log-likelihood for each sample.
         modelpar : list(str)
             List with the model parameter names.
         bounds : dict
             Dictionary with the (log-)uniform priors.
         normal_prior : dict
             Dictionary with the normal priors.
-        ln_evidence : tuple(float, float), None
-            Log evidence and uncertainty. Set to ``None`` when
-            ``sampler`` is 'emcee'.
-        mean_accept : float, None
-            Mean acceptance fraction. Set to ``None`` when
-            ``sampler`` is 'multinest' or 'ultranest'.
-        spectrum : tuple(str, str)
-            Tuple with the spectrum type ('model' or 'calibration')
-            and spectrum name (e.g. 'drift-phoenix' or 'evolution').
-        parallax : float, None
-            Parallax (mas) of the object. Not used if the
-            argument is set to ``None``.
+        fixed_param : dict
+            Dictionary with the fixed parameters
         spec_labels : list(str), None
             List with the spectrum labels that are used for fitting an
             additional scaling parameter. Not used if set to ``None``.
@@ -2186,12 +2196,6 @@ class Database:
             spec_labels = []
 
         with h5py.File(self.database, "a") as hdf5_file:
-            if "results" not in hdf5_file:
-                hdf5_file.create_group("results")
-
-            if "results/fit" not in hdf5_file:
-                hdf5_file.create_group("results/fit")
-
             if f"results/fit/{tag}" in hdf5_file:
                 del hdf5_file[f"results/fit/{tag}"]
 
@@ -2206,35 +2210,34 @@ class Database:
                 group_path = f"results/fit/{tag}/normal_prior/{key}"
                 hdf5_file.create_dataset(group_path, data=value)
 
-            if attr_dict is not None and "spec_type" in attr_dict:
-                dset.attrs["type"] = attr_dict["spec_type"]
-            else:
-                dset.attrs["type"] = str(spectrum[0])
+            for key, value in fixed_param.items():
+                group_path = f"results/fit/{tag}/fixed_param/{key}"
+                hdf5_file.create_dataset(group_path, data=value)
 
-            if attr_dict is not None and "spec_name" in attr_dict:
+            if "spec_type" in attr_dict:
+                dset.attrs["type"] = attr_dict["spec_type"]
+
+            if "spec_name" in attr_dict:
                 dset.attrs["spectrum"] = attr_dict["spec_name"]
-            else:
-                dset.attrs["spectrum"] = str(spectrum[1])
 
             dset.attrs["n_param"] = int(len(modelpar))
             dset.attrs["sampler"] = str(sampler)
             dset.attrs["n_bounds"] = int(len(bounds))
             dset.attrs["n_normal_prior"] = int(len(normal_prior))
+            dset.attrs["n_fixed"] = int(len(fixed_param))
 
-            if parallax is not None:
-                dset.attrs["parallax"] = float(parallax)
-
-            if attr_dict is not None and "mean_accept" in attr_dict:
+            if "mean_accept" in attr_dict:
                 mean_accept = float(attr_dict["mean_accept"])
                 dset.attrs["mean_accept"] = mean_accept
                 print(f"Mean acceptance fraction: {mean_accept:.3f}")
 
-            elif mean_accept is not None:
-                dset.attrs["mean_accept"] = float(mean_accept)
-                print(f"Mean acceptance fraction: {mean_accept:.3f}")
-
-            if ln_evidence is not None:
-                dset.attrs["ln_evidence"] = ln_evidence
+            if "ln_evidence" in attr_dict:
+                ln_evidence = attr_dict["ln_evidence"]
+                dset.attrs["ln_evidence"] = ln_evidence[0]
+                dset.attrs["ln_evidence_error"] = ln_evidence[1]
+                print(
+                    f"Ln(Z): {float(ln_evidence[0]):.2f} +/- {float(ln_evidence[1]):.2f}"
+                )
 
             count_scaling = 0
 
@@ -2247,24 +2250,19 @@ class Database:
 
             dset.attrs["n_scaling"] = int(count_scaling)
 
-            if "teff_0" in modelpar and "teff_1" in modelpar:
-                dset.attrs["binary"] = True
-            else:
-                dset.attrs["binary"] = False
-
-            print("\nIntegrated autocorrelation time:")
-
-            from emcee.autocorr import integrated_time
-
-            for i, item in enumerate(modelpar):
-                auto_corr = integrated_time(samples[:, i], quiet=True)[0]
-
-                if np.allclose(samples[:, i], np.mean(samples[:, i]), atol=0.0):
-                    print(f"   - {item}: fixed")
-                else:
-                    print(f"   - {item}: {auto_corr:.2f}")
-
-                dset.attrs[f"autocorrelation{i}"] = float(auto_corr)
+            # print("\nIntegrated autocorrelation time:")
+            #
+            # from emcee.autocorr import integrated_time
+            #
+            # for i, item in enumerate(modelpar):
+            #     auto_corr = integrated_time(samples[:, i], quiet=True)[0]
+            #
+            #     if item in fixed_param:
+            #         print(f"   - {item}: fixed")
+            #     else:
+            #         print(f"   - {item}: {auto_corr:.2f}")
+            #
+            #     dset.attrs[f"autocorrelation{i}"] = float(auto_corr)
 
             for key, value in attr_dict.items():
                 dset.attrs[key] = value
@@ -2278,7 +2276,7 @@ class Database:
     ) -> Dict[str, float]:
         """
         Function for extracting the sample parameters
-        with the highest posterior probability.
+        with the maximum likelihood.
 
         Parameters
         ----------
@@ -2296,11 +2294,11 @@ class Database:
         -------
         dict
             Parameters and values for the sample with the
-            maximum posterior probability.
+            maximum likelihood.
         """
 
         if verbose:
-            print_section("Get sample with highest probability")
+            print_section("Get sample with the maximum likelihood")
             print(f"Database tag: {tag}")
 
         if burnin is None:
@@ -2314,7 +2312,7 @@ class Database:
 
             if "n_param" in dset.attrs:
                 n_param = dset.attrs["n_param"]
-            elif "nparam" in dset.attrs:
+            else:
                 n_param = dset.attrs["nparam"]
 
             if samples.ndim == 3:
@@ -2330,10 +2328,8 @@ class Database:
                 samples = np.reshape(samples, (-1, n_param))
                 ln_prob = np.reshape(ln_prob, -1)
 
-            index_max = np.unravel_index(ln_prob.argmax(), ln_prob.shape)
-
-            # max_prob = ln_prob[index_max]
-            max_sample = samples[index_max]
+            index_max = np.argmax(ln_prob)
+            max_sample = samples[index_max,]
 
             prob_sample = {}
 
@@ -2407,7 +2403,7 @@ class Database:
 
             if "n_param" in dset.attrs:
                 n_param = dset.attrs["n_param"]
-            elif "nparam" in dset.attrs:
+            else:
                 n_param = dset.attrs["nparam"]
 
             samples = np.asarray(dset)
@@ -2570,7 +2566,7 @@ class Database:
         list(species.core.box.ModelBox)
             List with ``ModelBox`` objects. When fitting an unresolved
             binary system, this list contains the model spectra of
-            the combined flux. 
+            the combined flux.
         list(species.core.box.ModelBox)
             The list of ``ModelBox`` objects is only returned when
             fitting and unresolved binary system. It contains the
@@ -3313,7 +3309,7 @@ class Database:
                                 f"({norm_prior[0]}, {norm_prior[1]})"
                             )
 
-                            normal_priors[f"{bound_item}/{filter_item}"] = (
+                            normal_priors[f"{prior_item}/{filter_item}"] = (
                                 norm_prior[0],
                                 norm_prior[1],
                             )
@@ -3323,7 +3319,7 @@ class Database:
 
                         print(f"   - {prior_item} = ({norm_prior[0]}, {norm_prior[1]})")
 
-                        normal_priors[bound_item] = (norm_prior[0], norm_prior[1])
+                        normal_priors[prior_item] = (norm_prior[0], norm_prior[1])
 
         median_sample = self.get_median_sample(tag, burnin, verbose=False)
         prob_sample = self.get_probable_sample(tag, burnin, verbose=False)
@@ -4094,9 +4090,9 @@ class Database:
                     n_param = dset_attrs["n_param"] + 1
 
                     dset.attrs["n_param"] = n_param
-                    dset.attrs[
-                        f"parameter{n_param-1}"
-                    ] = f"{cloud_item[:-6].lower()}_fraction"
+                    dset.attrs[f"parameter{n_param-1}"] = (
+                        f"{cloud_item[:-6].lower()}_fraction"
+                    )
 
         if radtrans["quenching"] == "diffusion":
             p_quench = np.zeros(samples.shape[0])

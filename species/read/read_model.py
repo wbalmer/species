@@ -13,7 +13,7 @@ import numpy as np
 
 from PyAstronomy.pyasl import rotBroad, fastRotBroad
 from typeguard import typechecked
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from species.core import constants
@@ -201,10 +201,20 @@ class ReadModel:
         return wl_points[wl_index], wl_index
 
     @typechecked
-    def interpolate_model(self) -> None:
+    def interpolate_grid(
+        self, teff_range: Optional[Tuple[float, float]] = None
+    ) -> None:
         """
-        Internal function for linearly interpolating the
-        full grid of model spectra.
+        Internal function for linearly interpolating the grid of
+        model spectra for a requested wavelength range.
+
+        Parameters
+        ----------
+        teff_range : tuple(float, float), None
+            Effective temperature (K) range, (min, max) for which the
+            grid will be interpolated. The full grid as stored in the
+            database will be interpolated if the argument if set to
+            ``None``.
 
         Returns
         -------
@@ -212,191 +222,44 @@ class ReadModel:
             None
         """
 
-        grid_points = list(self.get_points().values())
+        # Get the grid points
 
-        if self.wl_points is None:
+        grid_points = self.get_points()
+
+        # Select the required Teff points of the grid
+
+        if "teff" in grid_points and teff_range is not None:
+            teff_select = (teff_range[0] <= grid_points["teff"]) & (
+                grid_points["teff"] <= teff_range[1]
+            )
+
+            grid_points["teff"] = grid_points["teff"][teff_select]
+
+        else:
+            teff_select = np.ones(grid_points["teff"].size, dtype=bool)
+
+        # Create list with grid points
+
+        grid_points = list(grid_points.values())
+
+        # Get the boolean array for selecting the fluxes
+        # within the requested wavelength range
+
+        if self.wl_index is None:
             self.wl_points, self.wl_index = self.wavelength_points()
+
+        # Open de HDF5 database and read the model fluxes
 
         with self.open_database() as hdf5_file:
             grid_flux = np.array(hdf5_file[f"models/{self.model}/flux"])
             grid_flux = grid_flux[..., self.wl_index]
+            grid_flux = grid_flux[teff_select, ...]
+
+        # Interpolate the grid of model spectra
 
         self.spectrum_interp = RegularGridInterpolator(
             grid_points,
             grid_flux,
-            method="linear",
-            bounds_error=False,
-            fill_value=np.nan,
-        )
-
-    @typechecked
-    def interpolate_grid(
-        self,
-        wavel_resample: Optional[np.ndarray] = None,
-        spec_res: Optional[float] = None,
-        **kwargs,
-    ) -> None:
-        """
-        Internal function for linearly interpolating the grid of model
-        spectra for a given filter or wavelength sampling.
-
-        wavel_resample : np.ndarray, None
-            Wavelength points for the resampling of the spectrum. The
-            ``filter_name`` is used if set to ``None``.
-        spec_res : float, None
-            Spectral resolution that is used for the Gaussian filter.
-            No smoothing is applied if the argument is set to ``None``.
-
-        Returns
-        -------
-        NoneType
-            None
-        """
-
-        self.interpolate_model()
-
-        if "smooth" in kwargs:
-            warnings.warn(
-                "The 'smooth' parameter has been "
-                "deprecated. Please set only the "
-                "'spec_res' argument, which can be set "
-                "to None for not applying a smoothing.",
-                DeprecationWarning,
-            )
-
-            if not kwargs["smooth"] and spec_res is not None:
-                spec_res = None
-
-        points = []
-        for item in self.get_points().values():
-            points.append(list(item))
-
-        param_list = self.get_parameters()
-        n_param = len(param_list)
-
-        dim_size = []
-        for item in points:
-            dim_size.append(len(item))
-
-        if self.filter_name is not None:
-            dim_size.append(1)
-        else:
-            dim_size.append(wavel_resample.size)
-
-        flux_new = np.zeros(dim_size)
-
-        if n_param == 1:
-            model_param = {}
-
-            for i, item_0 in enumerate(points[0]):
-                model_param[param_list[0]] = item_0
-
-                if self.filter_name is not None:
-                    flux_new[i] = self.get_flux(model_param)[0]
-
-                else:
-                    flux_new[i, :] = self.get_model(
-                        model_param,
-                        spec_res=spec_res,
-                        wavel_resample=wavel_resample,
-                    ).flux
-
-        elif n_param == 2:
-            model_param = {}
-
-            for i, item_0 in enumerate(points[0]):
-                for j, item_1 in enumerate(points[1]):
-                    model_param[param_list[0]] = item_0
-                    model_param[param_list[1]] = item_1
-
-                    if self.filter_name is not None:
-                        flux_new[i, j] = self.get_flux(model_param)[0]
-
-                    else:
-                        flux_new[i, j, :] = self.get_model(
-                            model_param,
-                            spec_res=spec_res,
-                            wavel_resample=wavel_resample,
-                        ).flux
-
-        elif n_param == 3:
-            model_param = {}
-
-            for i, item_0 in enumerate(points[0]):
-                for j, item_1 in enumerate(points[1]):
-                    for k, item_2 in enumerate(points[2]):
-                        model_param[param_list[0]] = item_0
-                        model_param[param_list[1]] = item_1
-                        model_param[param_list[2]] = item_2
-
-                        if self.filter_name is not None:
-                            flux_new[i, j, k] = self.get_flux(model_param)[0]
-
-                        else:
-                            flux_new[i, j, k, :] = self.get_model(
-                                model_param,
-                                spec_res=spec_res,
-                                wavel_resample=wavel_resample,
-                            ).flux
-
-        elif n_param == 4:
-            model_param = {}
-
-            for i, item_0 in enumerate(points[0]):
-                for j, item_1 in enumerate(points[1]):
-                    for k, item_2 in enumerate(points[2]):
-                        for m, item_3 in enumerate(points[3]):
-                            model_param[param_list[0]] = item_0
-                            model_param[param_list[1]] = item_1
-                            model_param[param_list[2]] = item_2
-                            model_param[param_list[3]] = item_3
-
-                            if self.filter_name is not None:
-                                flux_new[i, j, k, m] = self.get_flux(model_param)[0]
-
-                            else:
-                                flux_new[i, j, k, m, :] = self.get_model(
-                                    model_param,
-                                    spec_res=spec_res,
-                                    wavel_resample=wavel_resample,
-                                ).flux
-
-        elif n_param == 5:
-            model_param = {}
-
-            for i, item_0 in enumerate(points[0]):
-                for j, item_1 in enumerate(points[1]):
-                    for k, item_2 in enumerate(points[2]):
-                        for m, item_3 in enumerate(points[3]):
-                            for n, item_4 in enumerate(points[4]):
-                                model_param[param_list[0]] = item_0
-                                model_param[param_list[1]] = item_1
-                                model_param[param_list[2]] = item_2
-                                model_param[param_list[3]] = item_3
-                                model_param[param_list[4]] = item_4
-
-                                if self.filter_name is not None:
-                                    flux_new[i, j, k, m, n] = self.get_flux(
-                                        model_param
-                                    )[0]
-
-                                else:
-                                    flux_new[i, j, k, m, n, :] = self.get_model(
-                                        model_param,
-                                        spec_res=spec_res,
-                                        wavel_resample=wavel_resample,
-                                    ).flux
-
-        if self.filter_name is not None:
-            read_filter = ReadFilter(self.filter_name)
-            self.wl_points = [read_filter.mean_wavelength()]
-
-        else:
-            self.wl_points = wavel_resample
-
-        self.spectrum_interp = RegularGridInterpolator(
-            points,
-            flux_new,
             method="linear",
             bounds_error=False,
             fill_value=np.nan,
@@ -811,7 +674,7 @@ class ReadModel:
         # Interpolate the model grid
 
         if self.spectrum_interp is None:
-            self.interpolate_model()
+            self.interpolate_grid()
 
         # Set the wavelength range
 
@@ -1059,6 +922,7 @@ class ReadModel:
             )
 
             idx_select = ext_mag >= 0.0
+
             model_box.wavelength = model_box.wavelength[idx_select]
             model_box.flux = model_box.flux[idx_select]
 
@@ -1282,11 +1146,11 @@ class ReadModel:
 
                 ignore_param.append(key)
 
-        # Set the wavelength range
+        # Get wavelength points for wavelength range of
+        # a filter in case filter_name was set or a
+        # spectrum in case wavel_range was set
 
-        if self.wavel_range is None:
-            wl_points = self.get_wavelengths()
-            self.wavel_range = (wl_points[0], wl_points[-1])
+        self.wl_points, self.wl_index = self.wavelength_points()
 
         # Model parameters to check
 
@@ -1319,17 +1183,13 @@ class ReadModel:
                 if param_item.startswith("phot_ext_"):
                     ext_filter = param_item[9:]
 
-        # Read the wavelength grid and the indices that will
-        # be used for the wavelength range
-
-        wl_points, wl_index = self.wavelength_points()
-
         # Open de HDF5 database
 
         with self.open_database() as hdf5_file:
             # Read the grid of fluxes from the database
 
             flux = np.array(hdf5_file[f"models/{self.model}/flux"])
+            flux = flux[..., self.wl_index]
 
             # Find the indices of the grid points for which the spectrum will be extracted
 
@@ -1350,12 +1210,7 @@ class ReadModel:
 
                 indices.append(data_index[0])
 
-        # Append the wavelength indices to the list of grid indices
-
-        indices.append(wl_index)
-
-        # Extract the spectrum at the requested grid point and
-        # wavelength range
+        # Extract the spectrum at the requested grid point
 
         flux = flux[tuple(indices)]
 
@@ -1385,8 +1240,6 @@ class ReadModel:
 
         if "flux_offset" in model_param:
             flux += model_param["flux_offset"]
-
-        # Add blackbody disk component to the spectrum
 
         # Add blackbody disk component to the spectrum
 
@@ -1423,7 +1276,7 @@ class ReadModel:
             flux_interp = interp1d(
                 planck_box.wavelength, planck_box.flux, bounds_error=False
             )
-            flux += flux_interp(wl_points)
+            flux += flux_interp(self.wl_points)
 
         elif n_disk > 1:
             readplanck = ReadPlanck(
@@ -1447,14 +1300,14 @@ class ReadModel:
                 flux_interp = interp1d(
                     planck_box.wavelength, planck_box.flux, bounds_error=False
                 )
-                flux += flux_interp(wl_points)
+                flux += flux_interp(self.wl_points)
 
         # Create ModelBox with the spectrum
 
         model_box = create_box(
             boxtype="model",
             model=self.model,
-            wavelength=wl_points,
+            wavelength=self.wl_points,
             flux=flux,
             parameters=model_param,
             quantity="flux",
@@ -1581,7 +1434,7 @@ class ReadModel:
                     )
                     ** 2
                     * constants.SIGMA_SB
-                    * model_box.parameters[f"disk_teff"] ** 4.0
+                    * model_box.parameters["disk_teff"] ** 4.0
                     / constants.L_SUN
                 )  # (Lsun)
 
@@ -1630,7 +1483,7 @@ class ReadModel:
                 )
 
         if self.spectrum_interp is None:
-            self.interpolate_model()
+            self.interpolate_grid()
 
         model_box = self.get_model(model_param)
 
@@ -1706,7 +1559,7 @@ class ReadModel:
                 )
 
         if self.spectrum_interp is None:
-            self.interpolate_model()
+            self.interpolate_grid()
 
         try:
             spectrum = self.get_model(model_param)
@@ -1849,8 +1702,7 @@ class ReadModel:
 
             if "n_param" in dset.attrs:
                 n_param = dset.attrs["n_param"]
-
-            elif "nparam" in dset.attrs:
+            else:
                 n_param = dset.attrs["nparam"]
 
             param = []
@@ -2036,7 +1888,7 @@ class ReadModel:
             4.0
             * np.pi
             * (model_param["radius"] * constants.R_JUP) ** 2
-            * simps(model_box.flux, model_box.wavelength)
+            * simpson(y=model_box.flux, x=model_box.wavelength)
         )
 
         return np.log10(bol_lum / constants.L_SUN)
@@ -2209,3 +2061,79 @@ class ReadModel:
             color2=color_2_list,
             sptype=param_list,
         )
+
+    # def test_accuracy(self):
+    #     with self.open_database() as hdf5_file:
+    #         wl_points = np.array(hdf5_file[f"models/{self.model}/wavelength"])
+    #         grid_flux = np.array(hdf5_file[f"models/{self.model}/flux"])
+    #     print(grid_flux.shape)
+    #
+    #     import matplotlib.pyplot as plt
+    #
+    #     for i in range(grid_flux.shape[0]):
+    #         if i == 0:
+    #             continue
+    #         if i == grid_flux.shape[0]-1:
+    #             continue
+    #
+    #         # Get the grid points
+    #
+    #         grid_points = self.get_points()
+    #
+    #         # Select the required Teff points of the grid
+    #
+    #         # if "teff" in grid_points and teff_range is not None:
+    #         #     teff_select = (teff_range[0] <= grid_points["teff"]) & (
+    #         #         grid_points["teff"] <= teff_range[1]
+    #         #     )
+    #         #
+    #         #     grid_points["teff"] = grid_points["teff"][teff_select]
+    #         #
+    #         # else:
+    #         #     teff_select = np.ones(grid_points["teff"].size, dtype=bool)
+    #
+    #         # Create list with grid points
+    #
+    #         grid_points = list(grid_points.values())
+    #         print(grid_points)
+    #
+    #         # Get the boolean array for selecting the fluxes
+    #         # within the requested wavelength range
+    #
+    #         # if self.wl_index is None:
+    #         #     self.wl_points, self.wl_index = self.wavelength_points()
+    #
+    #         # Open de HDF5 database and read the model fluxes
+    #
+    #         # with self.open_database() as hdf5_file:
+    #         #     grid_flux = np.array(hdf5_file[f"models/{self.model}/flux"])
+    #         #     grid_flux = grid_flux[..., self.wl_index]
+    #         #     grid_flux = grid_flux[teff_select, ...]
+    #
+    #         grid_points_select = grid_points.copy()
+    #         grid_points_select[0] = np.delete(grid_points_select[0], i)
+    #
+    #         grid_flux_select = np.delete(grid_flux, i, axis=0)
+    #
+    #         # Interpolate the grid of model spectra
+    #
+    #         spectrum_interp = RegularGridInterpolator(
+    #             grid_points_select,
+    #             grid_flux_select,
+    #             method="linear",
+    #             bounds_error=False,
+    #             fill_value=np.nan,
+    #         )
+    #
+    #         param_test = (grid_points[0][i], grid_points[1][0])
+    #         flux_interp = spectrum_interp(param_test)
+    #         flux_true = grid_flux[i, 0]
+    #         diff = (flux_true-flux_interp)/flux_true
+    #         # plt.figure(figsize=(10., 3.))
+    #         # plt.plot(wl_points, 100.*diff, '-', lw=0.3)
+    #         # plt.yscale('log')
+    #         # plt.show()
+    #         # exit()
+    #
+    #         # grid_flux = grid_flux[..., self.wl_index]
+    #         # grid_flux = grid_flux[teff_select, ...]

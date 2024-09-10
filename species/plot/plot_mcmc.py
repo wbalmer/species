@@ -249,8 +249,10 @@ def plot_posterior(
         Axis limits of all parameters. Automatically set if the
         argument is set to ``None``.
     max_prob : bool
-        Plot the position of the sample with the
-        maximum posterior probability.
+        Plot the position of the sample with the maximum likelihood
+        probability. The sample may need to match with the maximum
+        posterior probability, depending on the use of any normal
+        priors.
     vmr : bool
         Plot the volume mixing ratios (i.e. number fractions)
         instead of the mass fractions of the retrieved species with
@@ -262,7 +264,7 @@ def plot_posterior(
         Include the mass in the posterior plot as calculated
         from the surface gravity and radius.
     inc_log_mass : bool
-        Include the logarithm of the mass, :math:`\\log10{M}`, in
+        Include the logarithm of the mass, :math:`\\log_{10}{M}`, in
         the posterior plot, as calculated from the surface gravity
         and radius.
     inc_pt_param : bool
@@ -270,7 +272,7 @@ def plot_posterior(
         Only used if the ``tag`` contains samples obtained with
         :class:`~species.fit.retrieval.AtmosphericRetrieval`.
     inc_loglike : bool
-        Include the log10 of the likelihood as additional
+        Include the log-likelihood, :math:`\\ln{L}`, as additional
         parameter in the corner plot.
     inc_abund : bool
         Include the abundances when retrieving free abundances with
@@ -528,7 +530,10 @@ def plot_posterior(
 
             else:
                 for disk_idx in range(100):
-                    if f"disk_teff_{disk_idx}" in box.parameters and f"disk_radius_{disk_idx}" in box.parameters:
+                    if (
+                        f"disk_teff_{disk_idx}" in box.parameters
+                        and f"disk_radius_{disk_idx}" in box.parameters
+                    ):
                         n_disk += 1
                     else:
                         break
@@ -573,8 +578,12 @@ def plot_posterior(
                 lum_disk = 0.0
 
                 for disk_idx in range(n_disk):
-                    teff_index = np.argwhere(np.array(box.parameters) == f"disk_teff_{disk_idx}")[0]
-                    radius_index = np.argwhere(np.array(box.parameters) == f"disk_radius_{disk_idx}")[0]
+                    teff_index = np.argwhere(
+                        np.array(box.parameters) == f"disk_teff_{disk_idx}"
+                    )[0]
+                    radius_index = np.argwhere(
+                        np.array(box.parameters) == f"disk_radius_{disk_idx}"
+                    )[0]
 
                     lum_disk += (
                         4.0
@@ -613,39 +622,26 @@ def plot_posterior(
                 box.parameters.append("luminosity")
                 ndim += 1
 
-        if "teff_0" in box.parameters and "radius_0" in box.parameters:
-            teff_index = np.argwhere(np.array(box.parameters) == "teff_0")
-            radius_index = np.argwhere(np.array(box.parameters) == "radius_0")
+        for i in range(100):
+            if f"teff_{i}" in box.parameters and f"radius_{i}" in box.parameters:
+                teff_index = np.argwhere(np.array(box.parameters) == f"teff_{i}")
+                radius_index = np.argwhere(np.array(box.parameters) == f"radius_{i}")
 
-            luminosity = (
-                4.0
-                * np.pi
-                * (samples[..., radius_index[0]] * constants.R_JUP) ** 2
-                * constants.SIGMA_SB
-                * samples[..., teff_index[0]] ** 4.0
-                / constants.L_SUN
-            )
+                luminosity = (
+                    4.0
+                    * np.pi
+                    * (samples[..., radius_index[0]] * constants.R_JUP) ** 2
+                    * constants.SIGMA_SB
+                    * samples[..., teff_index[0]] ** 4.0
+                    / constants.L_SUN
+                )
 
-            samples = np.append(samples, np.log10(luminosity), axis=-1)
-            box.parameters.append("luminosity_0")
-            ndim += 1
+                samples = np.append(samples, np.log10(luminosity), axis=-1)
+                box.parameters.append(f"luminosity_{i}")
+                ndim += 1
 
-        if "teff_1" in box.parameters and "radius_1" in box.parameters:
-            teff_index = np.argwhere(np.array(box.parameters) == "teff_1")
-            radius_index = np.argwhere(np.array(box.parameters) == "radius_1")
-
-            luminosity = (
-                4.0
-                * np.pi
-                * (samples[..., radius_index[0]] * constants.R_JUP) ** 2
-                * constants.SIGMA_SB
-                * samples[..., teff_index[0]] ** 4.0
-                / constants.L_SUN
-            )
-
-            samples = np.append(samples, np.log10(luminosity), axis=-1)
-            box.parameters.append("luminosity_1")
-            ndim += 1
+            else:
+                break
 
         if "teff_0" in box.parameters and "radius_0" in box.parameters:
             luminosity = 0.0
@@ -822,7 +818,7 @@ def plot_posterior(
 
             check_param = True
 
-        else:
+        if not check_param:
             warnings.warn(
                 "Samples with the log(g) and radius are required for 'inc_log_mass=True'."
             )
@@ -836,7 +832,9 @@ def plot_posterior(
 
     for radius_idx in range(100):
         if f"radius_{radius_idx}" in box.parameters:
-            radius_index = np.argwhere(np.array(box.parameters) == f"radius_{radius_idx}")[0]
+            radius_index = np.argwhere(
+                np.array(box.parameters) == f"radius_{radius_idx}"
+            )[0]
             if object_type == "star":
                 samples[:, radius_index] *= constants.R_JUP / constants.R_SUN
         else:
@@ -885,7 +883,9 @@ def plot_posterior(
 
     for disk_idx in range(100):
         if f"disk_radius_{disk_idx}" in box.parameters:
-            radius_index = np.argwhere(np.array(box.parameters) == f"disk_radius_{disk_idx}")[0]
+            radius_index = np.argwhere(
+                np.array(box.parameters) == f"disk_radius_{disk_idx}"
+            )[0]
             if object_type == "star":
                 samples[:, radius_index] *= constants.R_JUP / constants.AU
         else:
@@ -898,32 +898,38 @@ def plot_posterior(
 
     for disk_idx in range(100):
         if f"radius_bb_{disk_idx}" in box.parameters:
-            radius_index = np.argwhere(np.array(box.parameters) == f"radius_bb_{disk_idx}")[0]
+            radius_index = np.argwhere(
+                np.array(box.parameters) == f"radius_bb_{disk_idx}"
+            )[0]
             if object_type == "star":
                 samples[:, radius_index] *= constants.R_JUP / constants.AU
         else:
             break
 
-    # Include the log-likelihood
+    # Include the log-likelihood, ln(L)
 
     if inc_loglike:
         # Get ln(L) of the samples
         ln_prob = box.ln_prob[..., np.newaxis]
 
         # Normalized by the maximum ln(L)
-        ln_prob -= np.amax(ln_prob)
+        # ln_prob -= np.amax(ln_prob)
 
         # Convert ln(L) to log10(L)
-        log_prob = ln_prob * np.exp(1.0)
+        # log_prob = ln_prob * np.exp(1.0)
 
         # Convert log10(L) to L
-        prob = 10.0**log_prob
+        # prob = 10.0**log_prob
 
         # Normalize to an integrated probability of 1
-        prob /= np.sum(prob)
+        # prob /= np.sum(prob)
 
-        samples = np.append(samples, np.log10(prob), axis=-1)
-        box.parameters.append("log_prob")
+        # samples = np.append(samples, np.log10(prob), axis=-1)
+        # box.parameters.append("log_prob")
+        # ndim += 1
+
+        samples = np.append(samples, ln_prob, axis=-1)
+        box.parameters.append("ln_prob")
         ndim += 1
 
     # Remove abundances
@@ -999,7 +1005,7 @@ def plot_posterior(
 
     if max_prob:
         max_idx = np.argmax(box.ln_prob)
-        max_sample = samples[max_idx, :]
+        max_sample = samples[max_idx, ]
 
     if isinstance(title_fmt, list) and len(title_fmt) != ndim:
         raise ValueError(

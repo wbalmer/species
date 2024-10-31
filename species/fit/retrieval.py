@@ -27,7 +27,7 @@ try:
 except:
     warnings.warn(
         "PyMultiNest could not be imported. "
-        "Perhaps because MultiNest was not build "
+        "Perhaps because MultiNest was not built "
         "and/or found at the LD_LIBRARY_PATH "
         "(Linux) or DYLD_LIBRARY_PATH (Mac)?"
     )
@@ -35,7 +35,7 @@ except:
 from molmass import Formula
 from PyAstronomy.pyasl import fastRotBroad
 from schwimmbad import MPIPool
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 from scipy.stats import invgamma, norm
 from typeguard import typechecked
@@ -2331,7 +2331,7 @@ class AtmosphericRetrieval:
                     plt.clf()
 
                 # Bolometric flux (W m-2) from the low-resolution spectrum
-                f_bol_spec = simps(flux_lowres, wlen_lowres)
+                f_bol_spec = simpson(flux_lowres, wlen_lowres)
 
                 # Calculate again a low-resolution spectrum (R = 10) but now
                 # with the new Feautrier function from petitRADTRANS
@@ -3573,7 +3573,7 @@ class AtmosphericRetrieval:
 
         elif "fsed_1" in bounds or "fsed_2" in bounds:
             raise ValueError(
-                "The cross_corr parameter can not be "
+                "The cross_corr parameter cannot be "
                 "used with multiple fsed parameters."
             )
 
@@ -3583,7 +3583,8 @@ class AtmosphericRetrieval:
 
         for spec_value in self.spectrum.values():
             data_spec_res.append(spec_value[3])
-
+        if len(data_spec_res) == 0:
+            data_spec_res.append(40)  # for photometry only retrievals
         max_spec_res = max(data_spec_res)
 
         if max_spec_res > 1000.0 and self.res_mode == "c-k":
@@ -3662,7 +3663,7 @@ class AtmosphericRetrieval:
                 if param_item in bounds:
                     warnings.warn(
                         f"The '{param_item}' parameter "
-                        "can not be used if the "
+                        "cannot be used if the "
                         "'abund_nodes' argument is set. "
                         "The  prior boundaries of "
                         f"'{param_item}' will therefore "

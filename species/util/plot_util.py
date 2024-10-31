@@ -64,6 +64,10 @@ def sptype_to_index(
         ]
 
         for i, item in enumerate(spec_types):
+            try:
+                item = item.decode("utf-8")  # this catches spt names from fits files that are saved to the hdf5 as bytes
+            except AttributeError:
+                pass
             if item[0:2] in ["O0", "O1", "O2", "O3", "O4"]:
                 spt_discrete[i] = 0.5
 
@@ -136,6 +140,10 @@ def sptype_to_index(
         spt_check = ["O", "B", "A", "F", "G", "K", "M", "L", "T", "Y"]
 
         for i, item in enumerate(spec_types):
+            try:
+                item = item.decode("utf-8") # this catches spt names from fits files that are saved to the hdf5 as bytes
+            except AttributeError:
+                pass
             if item[0] == "O":
                 spt_discrete[i] = 0.5
 
@@ -344,7 +352,7 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     if "radius" in param:
         index = param.index("radius")
         if object_type == "planet":
-            param[index] = r"$R$ ($R_\mathrm{J}$)"
+            param[index] = r"$R_\mathrm{p}$ ($R_\mathrm{J}$)"
         elif object_type == "star":
             param[index] = r"$R_\ast$ ($R_\mathrm{\odot}$)"
 
@@ -526,6 +534,24 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         elif object_type == "star":
             param[index] = r"$L_\mathrm{disk}/L_\ast$"
 
+    if "log_lum" in param:
+        index = param.index("log_lum")
+        if object_type == "planet":
+            param[index] = r"$\log\,L/L_\mathrm{\odot}$"
+        elif object_type == "star":
+            param[index] = r"$\log\,L_\ast/L_\mathrm{\odot}$"
+
+    if "log_lum_atm" in param:
+        index = param.index("log_lum_atm")
+        if object_type == "planet":
+            param[index] = r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$"
+        elif object_type == "star":
+            param[index] = r"$\log\,L_\ast/L_\mathrm{\odot}$"
+
+    if "log_lum_disk" in param:
+        index = param.index("log_lum_disk")
+        param[index] = r"$\log\,L_\mathrm{disk}/L_\mathrm{\odot}$"
+
     if "lognorm_radius" in param:
         index = param.index("lognorm_radius")
         param[index] = r"$\log\,r_\mathrm{g}$"
@@ -624,6 +650,10 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         # Backward compatibility
         index = param.index("kzz")
         param[index] = r"$\log\,K_\mathrm{zz}$"
+
+    if "log_co_iso" in param:
+        index = param.index("log_co_iso")
+        param[index] = r"$\log\,^{12}\mathrm{CO}/^{13}\mathrm{CO}$"
 
     for i, item in enumerate(cloud_species):
         if f"{item.lower()}_fraction" in param:
@@ -1057,12 +1087,17 @@ def quantity_unit(
             unit.append(None)
             label.append(r"$\gamma_\mathrm{ad}$")
 
+        elif item == "log_co_iso":
+            quantity.append("log_co_iso")
+            unit.append(None)
+            label.append(r"$\log\,^{12}\mathrm{CO}/^{13}\mathrm{CO}$")
+
         elif item == "radius":
             quantity.append("radius")
 
             if object_type == "planet":
                 unit.append(r"$R_\mathrm{J}$")
-                label.append(r"$R$")
+                label.append(r"$R_\mathrm{p}$")
 
             elif object_type == "star":
                 unit.append(r"$R_\mathrm{\odot}$")
@@ -1141,8 +1176,41 @@ def quantity_unit(
 
         elif item == "luminosity":
             quantity.append("luminosity")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L_\ast/L_\mathrm{\odot}$")
+
+        elif item == "log_lum":
+            quantity.append("log_lum")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L/L_\mathrm{\odot}$")
+
+        elif item == "log_lum_atm":
+            quantity.append("log_lum_atm")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L_\ast/L_\mathrm{\odot}$")
+
+        elif item == "log_lum_disk":
+            quantity.append("log_lum_disk")
             unit.append(None)
-            label.append(r"$\log\,L/L_\mathrm{\odot}$")
+            label.append(r"$\log\,L_\mathrm{disk}/L_\mathrm{\odot}$")
 
         elif item == "ism_ext":
             quantity.append("ism_ext")
@@ -1503,6 +1571,12 @@ def create_model_label(
 
     not_default = ["distance", "parallax", "mass", "luminosity"]
 
+    # Do not include log_lum because log_lum_atm is already include
+    # expect when the model spectrum is a blackbody from ReadPlanck
+
+    if model_name != "planck":
+        not_default.append("log_lum")
+
     # Use the model parameters if leg_param is empty
 
     if len(leg_param) == 0:
@@ -1577,22 +1651,31 @@ def create_model_label(
                 radius_au = model_param[param_item] * constants.R_JUP / constants.AU
                 value = f"{radius_au:{param_fmt['disk_radius']}}"
 
-        elif param_item == "mass" and param_item in leg_param:
+        elif param_item == "mass":
             if object_type == "planet":
                 value = f"{model_param[param_item]:{param_fmt['mass']}}"
             elif object_type == "star":
                 value = f"{model_param[param_item]*constants.M_JUP/constants.M_SUN:{param_fmt['mass']}}"
 
-        elif param_item == "luminosity" and param_item in leg_param:
+        elif param_item == "luminosity":
             value = f"{np.log10(model_param[param_item]):{param_fmt['luminosity']}}"
 
-        elif param_item in leg_param and param_item in param_fmt:
+        elif param_item == "log_lum":
+            value = f"{model_param[param_item]:{param_fmt['log_lum']}}"
+
+        elif param_item == "log_lum_atm":
+            value = f"{model_param[param_item]:{param_fmt['log_lum_atm']}}"
+
+        elif param_item == "log_lum_disk":
+            value = f"{model_param[param_item]:{param_fmt['log_lum_disk']}}"
+
+        elif param_item in param_fmt:
             value = f"{model_param[param_item]:{param_fmt[param_item]}}"
 
-        elif param_item in leg_param and param_item not in param_fmt:
+        elif param_item not in param_fmt:
             warnings.warn(
-                f"The '{param_item}' parameter is not found in "
-                "the dictionary of 'param_fmt'."
+                f"The '{param_item}' parameter is not "
+                "found in the dictionary of 'param_fmt'."
             )
 
             value = f"{model_param[param_item]:{param_fmt[param_item]:.2f}}"
@@ -1656,6 +1739,7 @@ def create_param_format(param_fmt: Optional[Dict[str, str]]) -> Dict[str, str]:
         "metallicity",
         "fsed",
         "log_kzz",
+        "log_co_iso",
         "distance",
         "parallax",
         "mass",
@@ -1669,7 +1753,15 @@ def create_param_format(param_fmt: Optional[Dict[str, str]]) -> Dict[str, str]:
         if param_item not in param_fmt:
             param_fmt[param_item] = ".1f"
 
-    param_add = ["co", "c_o_ratio", "ad_index", "luminosity"]
+    param_add = [
+        "co",
+        "c_o_ratio",
+        "ad_index",
+        "luminosity",
+        "log_lum",
+        "log_lum_atm",
+        "log_lum_disk",
+    ]
 
     for param_item in param_add:
         if param_item not in param_fmt:

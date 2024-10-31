@@ -19,7 +19,7 @@ import pooch
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.units.quantity import Quantity
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from tqdm.auto import tqdm
 from typeguard import typechecked
 
@@ -377,18 +377,22 @@ class Database:
             if parallax is None:
                 parallax = tuple(comp_data[item]["parallax"])
 
-            app_mag = comp_data[item]["app_mag"]
+            if "app_mag" in comp_data[item]:
+                app_mag = comp_data[item]["app_mag"]
 
-            for key, value in app_mag.items():
-                if isinstance(value[0], list):
-                    mag_list = []
-                    for mag_item in value:
-                        mag_list.append(tuple(mag_item))
+                for key, value in app_mag.items():
+                    if isinstance(value[0], list):
+                        mag_list = []
+                        for mag_item in value:
+                            mag_list.append(tuple(mag_item))
 
-                    app_mag[key] = mag_list
+                        app_mag[key] = mag_list
 
-                else:
-                    app_mag[key] = tuple(value)
+                    else:
+                        app_mag[key] = tuple(value)
+
+            else:
+                app_mag = None
 
             self.add_object(
                 object_name=item,
@@ -928,7 +932,7 @@ class Database:
         units : dict, None
             Dictionary with the units of the data provided with
             ``flux_density`` and ``spectrum``. Only required if
-            the wavelength units are not :math:`\\mu\\text{m}^{-1}`
+            the wavelength units are not :math:`\\mu\\text{m}`
             and/or the flux units are not provided as
             :math:`\\text{W} \\text{m}^{-2} \\mu\\text{m}^{-1}`.
             Otherwise, the argument of ``units`` can be set to
@@ -1073,7 +1077,7 @@ class Database:
                     except KeyError:
                         warnings.warn(
                             f"Filter '{mag_item}' is not available on the SVO Filter "
-                            f"Profile Service so a flux calibration can not be done. "
+                            f"Profile Service so a flux calibration cannot be done. "
                             f"Please add the filter manually with the 'add_filter' "
                             f"function. For now, only the '{mag_item}' magnitude of "
                             f"'{object_name}' is stored."
@@ -1101,7 +1105,7 @@ class Database:
                         except KeyError:
                             warnings.warn(
                                 f"Filter '{mag_item}' is not available on the SVO "
-                                f"Filter Profile Service so a flux calibration can not "
+                                f"Filter Profile Service so a flux calibration cannot "
                                 f"be done. Please add the filter manually with the "
                                 f"'add_filter' function. For now, only the "
                                 f"'{mag_item}' magnitude of '{object_name}' is "
@@ -1342,7 +1346,7 @@ class Database:
 
                                 if spec_item not in read_spec:
                                     raise ValueError(
-                                        f"The spectrum data from {spec_value[0]} can not "
+                                        f"The spectrum data from {spec_value[0]} cannot "
                                         f"be read. The data format should be 2D with "
                                         f"3 columns."
                                     )
@@ -1353,14 +1357,14 @@ class Database:
 
                         except UnicodeDecodeError:
                             raise ValueError(
-                                f"The spectrum data from {spec_value[0]} can not "
+                                f"The spectrum data from {spec_value[0]} cannot "
                                 "be read. Please provide a FITS or ASCII file."
                             )
 
                         if data.ndim != 2 or 3 not in data.shape:
                             raise ValueError(
                                 f"The spectrum data from {spec_value[0]} "
-                                "can not be read. The data format "
+                                "cannot be read. The data format "
                                 "should be 2D with 3 columns."
                             )
 
@@ -1526,7 +1530,7 @@ class Database:
 
                                 if spec_item not in read_cov:
                                     raise ValueError(
-                                        f"The covariance matrix from {spec_value[1]} can not "
+                                        f"The covariance matrix from {spec_value[1]} cannot "
                                         f"be read. The data format should be 2D with the "
                                         f"same number of wavelength points as the "
                                         f"spectrum."
@@ -1538,14 +1542,14 @@ class Database:
                         except UnicodeDecodeError:
                             raise ValueError(
                                 f"The covariance matrix from {spec_value[1]} "
-                                f"can not be read. Please provide a "
+                                f"cannot be read. Please provide a "
                                 f"FITS or ASCII file."
                             )
 
                         if data.ndim != 2 or data.shape[0] != data.shape[1]:
                             raise ValueError(
                                 f"The covariance matrix from {spec_value[1]} "
-                                f"can not be read. The data format "
+                                f"cannot be read. The data format "
                                 f"should be 2D with the same number of "
                                 f"wavelength points as the spectrum."
                             )
@@ -1916,7 +1920,7 @@ class Database:
         Parameters
         ----------
         phot_library : str
-            Photometric library ('vlm-plx' or 'leggett').
+            Photometric library ('vlm-plx', 'leggett', or 'beiler2024').
 
         Returns
         -------
@@ -1942,6 +1946,11 @@ class Database:
                 from species.data.phot_data.phot_leggett import add_leggett
 
                 add_leggett(self.data_folder, hdf5_file)
+            
+            elif phot_library[0:10] == "beiler2024":
+                from species.data.phot_data.phot_jwst_ydwarfs import add_jwst_ydwarfs
+
+                add_jwst_ydwarfs(self.data_folder, hdf5_file)
 
     @typechecked
     def add_calibration(
@@ -2214,11 +2223,15 @@ class Database:
                 group_path = f"results/fit/{tag}/fixed_param/{key}"
                 hdf5_file.create_dataset(group_path, data=value)
 
-            if "spec_type" in attr_dict:
-                dset.attrs["type"] = attr_dict["spec_type"]
+            if "model_type" in attr_dict:
+                dset.attrs["model_type"] = attr_dict["model_type"]
+            elif "spec_type" in attr_dict:
+                dset.attrs["model_type"] = attr_dict["spec_type"]
 
-            if "spec_name" in attr_dict:
-                dset.attrs["spectrum"] = attr_dict["spec_name"]
+            if "model_name" in attr_dict:
+                dset.attrs["model_name"] = attr_dict["model_name"]
+            elif "spec_name" in attr_dict:
+                dset.attrs["model_name"] = attr_dict["spec_name"]
 
             dset.attrs["n_param"] = int(len(modelpar))
             dset.attrs["sampler"] = str(sampler)
@@ -2590,8 +2603,15 @@ class Database:
         hdf5_file = h5py.File(self.database, "r")
         dset = hdf5_file[f"results/fit/{tag}/samples"]
 
-        spectrum_type = dset.attrs["type"]
-        spectrum_name = dset.attrs["spectrum"]
+        if "model_type" in dset.attrs:
+            model_type = dset.attrs["model_type"]
+        else:
+            model_type = dset.attrs["type"]
+
+        if "model_name" in dset.attrs:
+            model_name = dset.attrs["model_name"]
+        else:
+            model_name = dset.attrs["spectrum"]
 
         if "n_param" in dset.attrs:
             n_param = dset.attrs["n_param"]
@@ -2635,7 +2655,7 @@ class Database:
             elif dset.attrs[f"parameter{i}"][:9] == "corr_amp_":
                 ignore_param.append(dset.attrs[f"parameter{i}"])
 
-        if spec_res is not None and spectrum_type == "calibration":
+        if spec_res is not None and model_type == "calibration":
             warnings.warn(
                 "Smoothing of the spectral resolution is not "
                 "implemented for calibration spectra."
@@ -2678,24 +2698,24 @@ class Database:
 
         hdf5_file.close()
 
-        if spectrum_type == "model":
-            if spectrum_name == "planck":
+        if model_type in ["model", "atmosphere"]:
+            if model_name == "planck":
                 from species.read.read_planck import ReadPlanck
 
                 readmodel = ReadPlanck(wavel_range)
 
-            elif spectrum_name == "powerlaw":
+            elif model_name == "powerlaw":
                 pass
 
             else:
                 from species.read.read_model import ReadModel
 
-                readmodel = ReadModel(spectrum_name, wavel_range=wavel_range)
+                readmodel = ReadModel(model_name, wavel_range=wavel_range)
 
-        elif spectrum_type == "calibration":
+        elif model_type == "calibration":
             from species.read.read_calibration import ReadCalibration
 
-            readcalib = ReadCalibration(spectrum_name, filter_name=None)
+            readcalib = ReadCalibration(model_name, filter_name=None)
 
         boxes = []
 
@@ -2724,15 +2744,15 @@ class Database:
             elif "distance" not in model_param and distance is not None:
                 model_param["distance"] = distance
 
-            if spectrum_type == "model":
-                if spectrum_name == "planck":
+            if model_type in ["model", "atmosphere"]:
+                if model_name == "planck":
                     specbox = readmodel.get_spectrum(
                         model_param,
                         spec_res,
                         wavel_resample=wavel_resample,
                     )
 
-                elif spectrum_name == "powerlaw":
+                elif model_name == "powerlaw":
                     if wavel_resample is not None:
                         warnings.warn(
                             "The 'wavel_resample' parameter is not support by the "
@@ -2779,7 +2799,7 @@ class Database:
 
                         specbox = create_box(
                             boxtype="model",
-                            model=spectrum_name,
+                            model=model_name,
                             wavelength=specbox_0.wavelength,
                             flux=flux_comb,
                             parameters=model_param,
@@ -2794,7 +2814,7 @@ class Database:
                             ext_filter=ext_filter,
                         )
 
-            elif spectrum_type == "calibration":
+            elif model_type == "calibration":
                 specbox = readcalib.get_spectrum(model_param)
 
             boxes.append(specbox)
@@ -2864,8 +2884,15 @@ class Database:
             elif "nparam" in dset.attrs:
                 n_param = dset.attrs["nparam"]
 
-            spectrum_type = dset.attrs["type"]
-            spectrum_name = dset.attrs["spectrum"]
+            if "model_type" in dset.attrs:
+                model_type = dset.attrs["model_type"]
+            else:
+                model_type = dset.attrs["type"]
+
+            if "model_name" in dset.attrs:
+                model_name = dset.attrs["model_name"]
+            else:
+                model_name = dset.attrs["spectrum"]
 
             if "binary" in dset.attrs:
                 binary = dset.attrs["binary"]
@@ -2901,8 +2928,8 @@ class Database:
             for i in range(n_param):
                 param.append(dset.attrs[f"parameter{i}"])
 
-        if spectrum_type == "model":
-            if spectrum_name == "powerlaw":
+        if model_type in ["model", "atmosphere"]:
+            if model_name == "powerlaw":
                 from species.phot.syn_phot import SyntheticPhotometry
 
                 synphot = SyntheticPhotometry(filter_name)
@@ -2911,12 +2938,12 @@ class Database:
             else:
                 from species.read.read_model import ReadModel
 
-                readmodel = ReadModel(spectrum_name, filter_name=filter_name)
+                readmodel = ReadModel(model_name, filter_name=filter_name)
 
-        elif spectrum_type == "calibration":
+        elif model_type == "calibration":
             from species.read.read_calibration import ReadCalibration
 
-            readcalib = ReadCalibration(spectrum_name, filter_name=filter_name)
+            readcalib = ReadCalibration(model_name, filter_name=filter_name)
 
         mcmc_phot = np.zeros((samples.shape[0]))
 
@@ -2936,8 +2963,8 @@ class Database:
             elif "distance" not in model_param and distance is not None:
                 model_param["distance"] = distance
 
-            if spectrum_type == "model":
-                if spectrum_name == "powerlaw":
+            if model_type in ["model", "atmosphere"]:
+                if model_name == "powerlaw":
                     from species.util.model_util import powerlaw_spectrum
 
                     pl_box = powerlaw_spectrum(synphot.wavel_range, model_param)
@@ -3004,7 +3031,7 @@ class Database:
                         else:
                             mcmc_phot[i], _ = readmodel.get_flux(model_param)
 
-            elif spectrum_type == "calibration":
+            elif model_type == "calibration":
                 if phot_type == "magnitude":
                     app_mag, _ = readcalib.get_magnitude(model_param=model_param)
                     mcmc_phot[i] = app_mag[0]
@@ -3229,7 +3256,10 @@ class Database:
             for item in dset.attrs:
                 attributes[item] = dset.attrs[item]
 
-            spectrum = dset.attrs["spectrum"]
+            if "model_name" in dset.attrs:
+                model_name = dset.attrs["model_name"]
+            else:
+                model_name = dset.attrs["spectrum"]
 
             if "n_param" in dset.attrs:
                 n_param = dset.attrs["n_param"]
@@ -3239,7 +3269,6 @@ class Database:
             if "ln_evidence" in dset.attrs:
                 ln_evidence = dset.attrs["ln_evidence"]
             else:
-                # For backward compatibility
                 ln_evidence = None
 
             param = []
@@ -3249,8 +3278,6 @@ class Database:
                 print(f"   - {param[-1]}")
 
             # Printing uniform and normal priors
-            # Check if attributes are present for
-            # backward compatibility
 
             uniform_priors = {}
             normal_priors = {}
@@ -3337,7 +3364,7 @@ class Database:
 
         return create_box(
             "samples",
-            spectrum=spectrum,
+            model_name=model_name,
             parameters=param,
             samples=samples,
             ln_prob=ln_prob,
@@ -3377,7 +3404,6 @@ class Database:
             if "ln_evidence" in dset.attrs:
                 ln_evidence = dset.attrs["ln_evidence"]
             else:
-                # For backward compatibility
                 ln_evidence = (None, None)
 
         return ln_evidence[0], ln_evidence[1]
@@ -3427,12 +3453,16 @@ class Database:
         hdf5_file = h5py.File(self.database, "r")
         dset = hdf5_file[f"results/fit/{tag}/samples"]
 
-        spectrum = dset.attrs["spectrum"]
+        if "model_name" in dset.attrs:
+            model_name = dset.attrs["model_name"]
+        else:
+            model_name = dset.attrs["spectrum"]
+
         pt_profile = dset.attrs["pt_profile"]
 
-        if spectrum != "petitradtrans":
+        if model_name != "petitradtrans":
             raise ValueError(
-                f"The model spectrum of the posterior samples is '{spectrum}' "
+                f"The model spectrum of the posterior samples is '{model_name}' "
                 f"instead of 'petitradtrans'. Extracting P-T profiles is "
                 f"therefore not possible."
             )
@@ -3637,7 +3667,7 @@ class Database:
         coord_points: List[np.ndarray],
         object_name: str,
         spec_name: List[str],
-        model: str,
+        model_name: str,
         scale_spec: List[str],
         extra_scaling: Optional[np.ndarray],
         inc_phot: List[str],
@@ -3668,7 +3698,7 @@ class Database:
         spec_name : list(str)
             List with spectrum names that are stored at the object
             data of ``object_name``.
-        model : str
+        model_name : str
             Atmospheric model grid that is used for the comparison.
         scale_spec : list(str)
             List with spectrum names to which an additional scaling
@@ -3707,7 +3737,7 @@ class Database:
             )
 
             dset.attrs["object_name"] = str(object_name)
-            dset.attrs["model"] = str(model)
+            dset.attrs["model_name"] = str(model_name)
             dset.attrs["n_param"] = len(model_param)
             dset.attrs["n_spec_name"] = len(spec_name)
             dset.attrs["n_scale_spec"] = len(scale_spec)
@@ -3866,8 +3896,8 @@ class Database:
 
             dset = hdf5_file.create_dataset(f"results/fit/{tag}/samples", data=samples)
 
-            dset.attrs["type"] = "model"
-            dset.attrs["spectrum"] = "petitradtrans"
+            dset.attrs["model_type"] = "retrieval"
+            dset.attrs["model_name"] = "petitradtrans"
             dset.attrs["n_param"] = len(parameters)
 
             if "parallax" in radtrans:
@@ -4203,7 +4233,7 @@ class Database:
                 sample_scale = (sample_distance / sample_radius) ** 2
 
                 # Blackbody flux: sigma * Teff^4
-                flux_int = simps(sample_scale * box_item.flux, box_item.wavelength)
+                flux_int = simpson(sample_scale * box_item.flux, box_item.wavelength)
                 teff[i] = (flux_int / constants.SIGMA_SB) ** 0.25
 
             db_tag = f"results/fit/{tag}/samples"
@@ -4356,7 +4386,6 @@ class Database:
                 temp_nodes = dset.attrs["temp_nodes"]
 
         else:
-            # For backward compatibility
             temp_nodes = None
 
         # Get distance
@@ -4583,7 +4612,7 @@ class Database:
             sample_scale = (sample_distance / sample_radius) ** 2
 
             # Blackbody flux: sigma * Teff^4
-            flux_int = simps(sample_scale * box_item.flux, box_item.wavelength)
+            flux_int = simpson(sample_scale * box_item.flux, box_item.wavelength)
             t_eff[i] = (flux_int / constants.SIGMA_SB) ** 0.25
 
             # Bolometric luminosity: 4 * pi * R^2 * sigma * Teff^4
@@ -4879,7 +4908,7 @@ class Database:
 
         # Blackbody flux: sigma * Teff^4
         # Scale the flux back to the planet surface
-        flux_int = simps(
+        flux_int = simpson(
             model_box.flux * (distance / radius) ** 2, model_box.wavelength
         )
         pcode_param["teff"] = (flux_int / constants.SIGMA_SB) ** 0.25

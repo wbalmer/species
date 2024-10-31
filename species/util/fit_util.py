@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Union
 
 import h5py
 import numpy as np
-import spectres
 
+from spectres.spectral_resampling_numba import spectres_numba
 from typeguard import typechecked
 
 from species.core.box import ObjectBox, ResidualsBox, SynphotBox, create_box
@@ -295,28 +295,62 @@ def get_residuals(
     database_path = config["species"]["database"]
 
     with h5py.File(database_path, "r") as hdf5_file:
-        dset = hdf5_file[f"results/fit/{tag}/samples"]
-        spectrum = dset.attrs["spectrum"]
-        binary = dset.attrs["binary"]
-        print(f"Model: {spectrum}")
-        print(f"Binary: {binary}")
+        if f"results/fit/{tag}/samples" in hdf5_file:
+            results_type = "FitModel"
+            dset = hdf5_file[f"results/fit/{tag}/samples"]
+            print("Results type: FitModel")
+
+        elif f"results/comparison/{tag}/goodness_of_fit" in hdf5_file:
+            results_type = "CompareSpectra"
+            dset = hdf5_file[f"results/comparison/{tag}/goodness_of_fit"]
+            print("Selected results: CompareSpectra")
+
+        else:
+            raise ValueError(
+                f"The '{tag}' tag is not found in the "
+                "database. Please specify modeling "
+                "results from either FitModel or "
+                "CompareSpectra."
+            )
+
+        if "model_name" in dset.attrs:
+            model_name = dset.attrs["model_name"]
+        elif "spectrum" in dset.attrs:
+            model_name = dset.attrs["spectrum"]
+        elif "model" in dset.attrs:
+            model_name = dset.attrs["model"]
+        else:
+            raise ValueError(
+                "The attribute with the model name is "
+                f"not found in the results of '{tag}'."
+            )
+
+        print(f"Model: {model_name}")
+
+        if "binary" in dset.attrs:
+            binary = dset.attrs["binary"]
+            print(f"Binary: {binary}")
 
         n_param = dset.attrs["n_param"]
 
-        if "n_fixed" in dset.attrs:
-            n_fixed = dset.attrs["n_fixed"]
+        if results_type == "FitModel":
+            if "n_fixed" in dset.attrs:
+                n_fixed = dset.attrs["n_fixed"]
 
+            else:
+                n_fixed = 0
+
+                warnings.warn(
+                    "The 'fixed_param' group is not found in "
+                    f"the results of {tag}. Probably the "
+                    "results were obtained with an older "
+                    "version of the package. Please rerun "
+                    "FitModel to update the results. Setting "
+                    "the number of fixed parameters to zero."
+                )
         else:
+            # TODO not yet implemented for CompareSpectra
             n_fixed = 0
-
-            warnings.warn(
-                "The 'fixed_param' group is not found in "
-                f"the results of {tag}. Probably the "
-                "results were obtained with an older "
-                "version of the package. Please rerun "
-                "FitModel to update the results. Setting "
-                "the number of fixed parameters to zero."
-            )
 
         print("\nModel parameters:")
         for param_idx in range(n_param):
@@ -347,7 +381,7 @@ def get_residuals(
 
         model_phot = multi_photometry(
             datatype="model",
-            spectrum=spectrum,
+            spectrum=model_name,
             filters=inc_phot,
             parameters=parameters,
             radtrans=radtrans,
@@ -378,10 +412,11 @@ def get_residuals(
     if inc_spec and objectbox.spectrum is not None:
         res_spec = {}
 
-        if spectrum == "petitradtrans":
+        if model_name == "petitradtrans":
             # Calculate the petitRADTRANS spectrum only once
             # Smoothing and resampling not with get_model
-            model = radtrans.get_model(parameters)
+
+            model_box = radtrans.get_model(parameters)
 
         for key in objectbox.spectrum:
             if isinstance(inc_spec, bool) or key in inc_spec:
@@ -393,37 +428,39 @@ def get_residuals(
                 wl_new = objectbox.spectrum[key][0][:, 0]
                 spec_res = objectbox.spectrum[key][3]
 
-                if spectrum == "planck":
+                if model_name == "planck":
                     readmodel = ReadPlanck(wavel_range=wavel_range)
 
-                    model = readmodel.get_spectrum(
+                    model_box = readmodel.get_spectrum(
                         model_param=parameters, spec_res=1000.0
                     )
 
                     # Separate resampling to the new wavelength points
 
-                    flux_new = spectres.spectres(
+                    flux_new = spectres_numba(
                         wl_new,
-                        model.wavelength,
-                        model.flux,
+                        model_box.wavelength,
+                        model_box.flux,
                         spec_errs=None,
-                        fill=0.0,
+                        fill=np.nan,
                         verbose=True,
                     )
 
-                elif spectrum == "petitradtrans":
+                elif model_name == "petitradtrans":
                     # Smoothing to the instrument resolution
+
                     flux_smooth = convolve_spectrum(
-                        model.wavelength, model.flux, spec_res
+                        model_box.wavelength, model_box.flux, spec_res
                     )
 
                     # Resampling to the new wavelength points
-                    flux_new = spectres.spectres(
+
+                    flux_new = spectres_numba(
                         wl_new,
-                        model.wavelength,
+                        model_box.wavelength,
                         flux_smooth,
                         spec_errs=None,
-                        fill=0.0,
+                        fill=np.nan,
                         verbose=True,
                     )
 
@@ -431,7 +468,7 @@ def get_residuals(
                     # Resampling to the new wavelength points
                     # is done by the get_model method
 
-                    readmodel = ReadModel(spectrum, wavel_range=wavel_range)
+                    readmodel = ReadModel(model_name, wavel_range=wavel_range)
 
                     if "teff_0" in parameters and "teff_1" in parameters:
                         # Binary system
@@ -466,7 +503,7 @@ def get_residuals(
 
                         model_spec = create_box(
                             boxtype="model",
-                            model=spectrum,
+                            model=model_name,
                             wavelength=wl_new,
                             flux=flux_comb,
                             parameters=parameters,

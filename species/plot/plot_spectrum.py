@@ -151,10 +151,10 @@ def plot_spectrum(
     leg_param : list(str), None
         List with the parameters to include in the legend of the
         model spectra. Apart from atmospheric parameters (e.g.
-        'teff', 'logg', 'radius') also parameters such as 'mass'
-        and 'luminosity' can be included. The default atmospheric
-        parameters are included in the legend if the argument is
-        set to ``None``.
+        'teff', 'logg', 'radius') also parameters such as 'mass',
+        'log_lum', log_lum_atm', and 'log_lum_disk' can be
+        included. The default atmospheric parameters are included
+        in the legend if the argument is set to ``None``.
     param_fmt : dict(str, str), None
         Dictionary with formats that will be used for the model
         parameter. The parameters are included in the ``legend``
@@ -426,16 +426,16 @@ def plot_spectrum(
         font_size = {}
 
     if "xlabel" not in font_size:
-        font_size["xlabel"] = 11.
+        font_size["xlabel"] = 11.0
 
     if "ylabel" not in font_size:
-        font_size["ylabel"] = 11.
+        font_size["ylabel"] = 11.0
 
     if "title" not in font_size:
-        font_size["title"] = 13.
+        font_size["title"] = 13.0
 
     if "legend" not in font_size:
-        font_size["legend"] = 9.
+        font_size["legend"] = 9.0
 
     print(f"Font sizes: {font_size}")
 
@@ -463,7 +463,9 @@ def plot_spectrum(
             ax3.set_ylabel(r"$\Delta$$f_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
 
         elif quantity == "flux":
-            ax3.set_ylabel(r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"])
+            ax3.set_ylabel(
+                r"$\Delta$$F_\lambda$ ($\sigma$)", fontsize=font_size["ylabel"]
+            )
 
     if quantity == "magnitude":
         scaling = 1.0
@@ -522,7 +524,9 @@ def plot_spectrum(
                 )
 
             elif quantity == "flux":
-                ax1.set_ylabel(r"$\lambda$$F_\lambda$ (W m$^{-2}$)", fontsize=font_size["ylabel"])
+                ax1.set_ylabel(
+                    r"$\lambda$$F_\lambda$ (W m$^{-2}$)", fontsize=font_size["ylabel"]
+                )
 
             scaling = 1.0
 
@@ -642,7 +646,10 @@ def plot_spectrum(
                         flux_scaling = wavelength
 
                     ax1.plot(
-                        wavelength, flux_scaling * flux_masked / scaling, lw=0.5, label=label
+                        wavelength,
+                        flux_scaling * flux_masked / scaling,
+                        lw=0.5,
+                        label=label,
                     )
 
         elif isinstance(box_item, list):
@@ -961,18 +968,18 @@ def plot_spectrum(
                     # wavelengths but hwhm_up and hwhm_down will
                     # be different when converting a FWHM from
                     # wavelength to frequency
-                    fwhm = (hwhm_up + hwhm_down)
+                    fwhm = hwhm_up + hwhm_down
 
                     if not plot_kwargs[j] or filter_item not in plot_kwargs[j]:
                         if not plot_kwargs[j]:
                             plot_kwargs[j] = {}
 
-                        if quantity == "flux":
-                            flux_scaling = wavelength
-
-                        scale_tmp = flux_scaling / scaling
-
                         if isinstance(box_item.flux[filter_item][0], np.ndarray):
+                            if quantity == "flux":
+                                flux_scaling = wavelength[0]
+
+                            scale_tmp = flux_scaling / scaling
+
                             for phot_idx in range(box_item.flux[filter_item].shape[1]):
                                 plot_obj = ax1.errorbar(
                                     wavelength[phot_idx],
@@ -987,6 +994,11 @@ def plot_spectrum(
                                 )
 
                         else:
+                            if quantity == "flux":
+                                flux_scaling = wavelength
+
+                            scale_tmp = flux_scaling / scaling
+
                             plot_obj = ax1.errorbar(
                                 wavelength,
                                 scale_tmp * flux_conv,
@@ -1005,10 +1017,10 @@ def plot_spectrum(
                         }
 
                     else:
-                        if quantity == "flux":
-                            flux_scaling = wavelength
-
                         if isinstance(box_item.flux[filter_item][0], np.ndarray):
+                            if quantity == "flux":
+                                flux_scaling = wavelength[0]
+
                             if not isinstance(plot_kwargs[j][filter_item], list):
                                 raise ValueError(
                                     f"A list with {box_item.flux[filter_item].shape[1]} "
@@ -1047,6 +1059,9 @@ def plot_spectrum(
                                 )
 
                         else:
+                            if quantity == "flux":
+                                flux_scaling = wavelength
+
                             if plot_kwargs[j] and filter_item in plot_kwargs[j]:
                                 if "label" in plot_kwargs[j][filter_item]:
                                     labels_data.append(
@@ -1107,18 +1122,14 @@ def plot_spectrum(
                 flux_conv = data_out[:, 1]
 
                 # Convert FWHM of filter to requested units
-                data_in = np.column_stack(
-                    [[wavel_micron + fwhm_micron / 2.0], [1.0]]
-                )
+                data_in = np.column_stack([[wavel_micron + fwhm_micron / 2.0], [1.0]])
                 data_out = convert_units(data_in, units, convert_from=False)
 
                 # Absolute value because could be negative when frequency
                 hwhm_up = np.abs(data_out[0, 0] - wavelength[0])
 
                 # Convert FWHM of filter to requested units
-                data_in = np.column_stack(
-                    [[wavel_micron - fwhm_micron / 2.0], [1.0]]
-                )
+                data_in = np.column_stack([[wavel_micron - fwhm_micron / 2.0], [1.0]])
                 data_out = convert_units(data_in, units, convert_from=False)
 
                 # Absolute value because could be negative when frequency
@@ -1129,7 +1140,7 @@ def plot_spectrum(
                 # wavelengths but hwhm_up and hwhm_down will
                 # be different when converting a FWHM from
                 # wavelength to frequency
-                fwhm = (hwhm_up + hwhm_down)
+                fwhm = hwhm_up + hwhm_down
 
                 if quantity == "flux":
                     flux_scaling = wavelength
@@ -1232,7 +1243,7 @@ def plot_spectrum(
 
         if obj_index is None:
             raise ValueError(
-                "ObjectBox not found so can not create "
+                "ObjectBox not found so cannot create "
                 "residuals. Please add an ObjectBox to "
                 "the list of boxes."
             )

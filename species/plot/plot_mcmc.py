@@ -317,7 +317,20 @@ def plot_posterior(
 
     print(f"Database tag: {tag}")
     print(f"Object type: {object_type}")
-    print(f"Manual parameters: {param_inc}")
+    print(f"Manual parameters: {param_inc}\n")
+
+    if "model_type" in box.attributes:
+        print((f"Model type: {box.attributes['model_type']}"))
+    elif "spec_type" in box.attributes:
+        print((f"Model type: {box.attributes['spec_type']}"))
+
+    if "model_name" in box.attributes:
+        print((f"Model name: {box.attributes['model_name']}"))
+    elif "spec_name" in box.attributes:
+        print((f"Model type: {box.attributes['spec_name']}"))
+
+    if "sampler" in box.attributes:
+        print((f"Sampler: {box.attributes['sampler']}"))
 
     plt.rcParams["font.family"] = "monospace"
     plt.rcParams["font.monospace"] = "DejaVu Sans Mono"
@@ -514,7 +527,7 @@ def plot_posterior(
             teff_index = np.argwhere(np.array(box.parameters) == "teff")[0]
             radius_index = np.argwhere(np.array(box.parameters) == "radius")[0]
 
-            lum_planet = (
+            lum_atm = (
                 4.0
                 * np.pi
                 * (samples[..., radius_index] * constants.R_JUP) ** 2
@@ -551,16 +564,16 @@ def plot_posterior(
                     / constants.L_SUN
                 )
 
-                samples = np.append(samples, np.log10(lum_planet + lum_disk), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
-                samples = np.append(samples, lum_disk / lum_planet, axis=-1)
-                box.parameters.append("luminosity_disk_planet")
+                samples = np.append(samples, np.log10(lum_disk), axis=-1)
+                box.parameters.append("log_lum_disk")
                 ndim += 1
 
                 radius_bb = np.sqrt(
-                    lum_planet
+                    lum_atm
                     * constants.L_SUN
                     / (
                         16.0
@@ -595,7 +608,7 @@ def plot_posterior(
                     )
 
                     radius_bb = np.sqrt(
-                        lum_planet
+                        lum_atm
                         * constants.L_SUN
                         / (
                             16.0
@@ -609,17 +622,17 @@ def plot_posterior(
                     box.parameters.append(f"radius_bb_{disk_idx}")
                     ndim += 1
 
-                samples = np.append(samples, np.log10(lum_planet + lum_disk), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
-                samples = np.append(samples, lum_disk / lum_planet, axis=-1)
-                box.parameters.append("luminosity_disk_planet")
+                samples = np.append(samples, np.log10(lum_disk), axis=-1)
+                box.parameters.append("log_lum_disk")
                 ndim += 1
 
             else:
-                samples = np.append(samples, np.log10(lum_planet), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
         for i in range(100):
@@ -637,7 +650,7 @@ def plot_posterior(
                 )
 
                 samples = np.append(samples, np.log10(luminosity), axis=-1)
-                box.parameters.append(f"luminosity_{i}")
+                box.parameters.append(f"log_lum_{i}")
                 ndim += 1
 
             else:
@@ -664,7 +677,7 @@ def plot_posterior(
                     break
 
             samples = np.append(samples, np.log10(luminosity), axis=-1)
-            box.parameters.append("luminosity")
+            box.parameters.append("log_lum")
             ndim += 1
 
             # teff_index = np.argwhere(np.array(box.parameters) == 'teff_0')
@@ -976,6 +989,26 @@ def plot_posterior(
         ndim = len(param_inc)
         samples = param_new
 
+    # Only for fitting evolutionary models
+    # Remove index from parameter names when fitting 1 planet
+
+    if "model_type" in box.attributes and box.attributes["model_type"] == "evolution":
+        if box.attributes["n_planets"] == 1:
+            param_copy = box.parameters.copy()
+            box.parameters = []
+
+            for param_item in param_copy:
+                if param_item[-2:] == "_0":
+                    box.parameters.append(param_item[:-2])
+                else:
+                    box.parameters.append(param_item)
+
+    # Parameters to be included in the corner plot
+
+    print("\nParameters included in corner plot:")
+    for param_item in box.parameters:
+        print(f"   - {param_item}")
+
     # Update axes labels
 
     box_param = box.parameters.copy()
@@ -1005,7 +1038,7 @@ def plot_posterior(
 
     if max_prob:
         max_idx = np.argmax(box.ln_prob)
-        max_sample = samples[max_idx, ]
+        max_sample = samples[max_idx,]
 
     if isinstance(title_fmt, list) and len(title_fmt) != ndim:
         raise ValueError(
@@ -1046,6 +1079,8 @@ def plot_posterior(
             hist_title = f"{param_label} = {best_fit} {unit_label}"
 
         hist_titles.append(hist_title)
+
+    # Create corner plot
 
     fig = corner.corner(
         samples,
@@ -1156,12 +1191,10 @@ def plot_posterior(
     if title:
         fig.suptitle(title, y=1.02, fontsize=16)
 
-    if output is not None:
-        print(f"\nOutput: {output}")
-
     if output is None:
         plt.show()
     else:
+        print(f"\nOutput: {output}")
         plt.savefig(output, bbox_inches="tight")
 
     return fig

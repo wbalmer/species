@@ -13,7 +13,7 @@ import h5py
 import numpy as np
 import pooch
 
-from scipy.interpolate import interp1d
+from spectres.spectral_resampling_numba import spectres_numba
 from typeguard import typechecked
 
 from species.util.core_util import print_section
@@ -101,15 +101,6 @@ def add_model_grid(
             "a newer version. In that case, set "
             "model='bt-settl-cifist' when using "
             "add_model of Database."
-        )
-
-    elif model_tag == "exo-rem":
-        warnings.warn(
-            "The Exo-Rem grid has been updated to the latest version "
-            "from https://lesia.obspm.fr/exorem/YGP_grids/. Please "
-            "consider removing the grid from the 'data_folder' if "
-            "needed such that the latest version of the grid will "
-            "be downloaded and added to the HDF5 database."
         )
 
     elif model_tag == "exo-rem-highres":
@@ -254,6 +245,11 @@ def add_model_grid(
     else:
         ad_index = None
 
+    if "log_co_iso" in model_info["parameters"]:
+        log_co_iso = []
+    else:
+        log_co_iso = None
+
     flux = []
 
     print()
@@ -328,6 +324,10 @@ def add_model_grid(
                 param_index = file_split.index("adindex") + 1
                 ad_index.append(float(file_split[param_index]))
 
+            if log_co_iso is not None:
+                param_index = file_split.index("coiso") + 1
+                log_co_iso.append(float(file_split[param_index]))
+
             empty_message = len(print_message) * " "
             print(f"\r{empty_message}", end="")
 
@@ -372,8 +372,14 @@ def add_model_grid(
                     flux.append(data_flux[wavel_select])  # (W m-2 um-1)
 
                 else:
-                    flux_interp = interp1d(data_wavel, data_flux)
-                    flux_resample = flux_interp(wavelength)
+                    flux_resample = spectres_numba(
+                        wavelength,
+                        data_wavel,
+                        data_flux,
+                        spec_errs=None,
+                        fill=np.nan,
+                        verbose=True,
+                    )
 
                     if np.isnan(np.sum(flux_resample)):
                         raise ValueError(
@@ -406,6 +412,9 @@ def add_model_grid(
     if ad_index is not None:
         ad_index = np.asarray(ad_index)
 
+    if log_co_iso is not None:
+        log_co_iso = np.asarray(log_co_iso)
+
     data_sorted = sort_data(
         np.asarray(teff),
         logg,
@@ -414,6 +423,7 @@ def add_model_grid(
         fsed,
         log_kzz,
         ad_index,
+        log_co_iso,
         wavelength,
         np.asarray(flux),
     )

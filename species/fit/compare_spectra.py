@@ -268,11 +268,14 @@ class CompareSpectra:
 
                                 idx_select = np.isfinite(c_numer) & np.isfinite(c_denom)
 
-                                c_k = np.sum(c_numer[idx_select]) / np.sum(c_denom[idx_select])
+                                c_k = np.sum(c_numer[idx_select]) / np.sum(
+                                    c_denom[idx_select]
+                                )
                                 c_k_spec.append(c_k)
 
                                 chi_sq = (
-                                    spec_item[indices, 1][idx_select] - c_k * flux_resample[idx_select]
+                                    spec_item[indices, 1][idx_select]
+                                    - c_k * flux_resample[idx_select]
                                 ) / spec_item[indices, 2][idx_select]
 
                                 g_k += np.sum(w_i * chi_sq**2)
@@ -404,7 +407,7 @@ class CompareSpectra:
         fix_logg : float, None
             Fix the value of :math:`\\log(g)`, for example if estimated
             from gravity-sensitive spectral features. Typically,
-            :math:`\\log(g)` can not be accurately determined when
+            :math:`\\log(g)` cannot be accurately determined when
             comparing the spectra over a broad wavelength range.
         scale_spec : list(str), None
             List with names of observed spectra to which an additional
@@ -619,21 +622,43 @@ class CompareSpectra:
                                     model_phot[phot_item] = syn_phot.spectrum_to_flux(
                                         model_box_full.wavelength, model_box_full.flux
                                     )[0]
-                                    model_list.append(np.array([model_phot[phot_item]]))
 
                                     phot_flux = object_flux[phot_item]
-                                    phot_data = np.array(
-                                        [
-                                            [
-                                                phot_wavel[phot_item],
-                                                phot_flux[0],
-                                                phot_flux[1],
-                                            ]
-                                        ]
-                                    )
-                                    data_list.append(phot_data)
 
-                                    weights_list.append(np.array([w_i[phot_item]]))
+                                    if phot_flux.ndim == 1:
+                                        phot_data = np.array(
+                                            [
+                                                [
+                                                    phot_wavel[phot_item],
+                                                    phot_flux[0],
+                                                    phot_flux[1],
+                                                ]
+                                            ]
+                                        )
+                                        data_list.append(phot_data)
+                                        model_list.append(
+                                            np.array([model_phot[phot_item]])
+                                        )
+                                        weights_list.append(np.array([w_i[phot_item]]))
+
+                                    else:
+                                        for phot_idx in range(phot_flux.shape[1]):
+                                            phot_data = np.array(
+                                                [
+                                                    [
+                                                        phot_wavel[phot_item],
+                                                        phot_flux[0][phot_idx],
+                                                        phot_flux[1][phot_idx],
+                                                    ]
+                                                ]
+                                            )
+                                            data_list.append(phot_data)
+                                            model_list.append(
+                                                np.array([model_phot[phot_item]])
+                                            )
+                                            weights_list.append(
+                                                np.array([w_i[phot_item]])
+                                            )
 
                                 data_list = np.concatenate(data_list)
                                 model_list = np.concatenate(model_list)
@@ -788,7 +813,7 @@ class CompareSpectra:
             coord_points=coord_points,
             object_name=self.object_name,
             spec_name=self.spec_name,
-            model=model,
+            model_name=model,
             scale_spec=scale_spec,
             extra_scaling=extra_scaling,
             inc_phot=inc_phot,

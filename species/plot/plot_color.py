@@ -560,7 +560,15 @@ def plot_color_magnitude(
             planck_count += 1
 
     if empirical:
-        cmap = plt.cm.magma
+        import matplotlib
+        def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+            new_cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+                cmap(np.linspace(minval, maxval, n)))
+            return new_cmap
+
+        cmapi = plt.get_cmap('twilight_shifted')
+        cmap = truncate_colormap(cmapi, 0.0, 0.4)
 
         bounds, ticks, ticklabels = field_bounds_ticks(field_range, check_subclass)
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
@@ -1511,7 +1519,15 @@ def plot_color_color(
             spectra_count += 1
 
     if empirical:
-        cmap = plt.cm.magma
+        import matplotlib
+        def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+            new_cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+                cmap(np.linspace(minval, maxval, n)))
+            return new_cmap
+
+        cmapi = plt.get_cmap('twilight_shifted')
+        cmap = truncate_colormap(cmapi, 0.0, 0.4)
 
         bounds, ticks, ticklabels = field_bounds_ticks(field_range, check_subclass)
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)

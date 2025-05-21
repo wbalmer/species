@@ -5,13 +5,17 @@ Utility functions for model spectra.
 import json
 import warnings
 
+from itertools import product
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 
-from PyAstronomy.pyasl import fastRotBroad
-from scipy.interpolate import interp1d, RegularGridInterpolator
+from astropy import units as u
+
+# from PyAstronomy.pyasl import fastRotBroad
+from scipy.interpolate import RegularGridInterpolator
+from spectres.spectral_resampling_numba import spectres_numba
 from typeguard import typechecked
 
 from species.core import constants
@@ -178,78 +182,6 @@ def gaussian_spectrum(
     return model_box
 
 
-# @typechecked
-# def add_luminosity(modelbox: ModelBox) -> ModelBox:
-#     """
-#     Function to add the luminosity of a model spectrum to the parameter
-#     dictionary of the box.
-#
-#     Parameters
-#     ----------
-#     modelbox : species.core.box.ModelBox
-#         Box with the model spectrum. Should also contain the dictionary
-#         with the model parameters, the radius in particular.
-#
-#     Returns
-#     -------
-#     species.core.box.ModelBox
-#         The input box with the luminosity added in the parameter
-#         dictionary.
-#     """
-#
-#     print("Calculating the luminosity...", end="", flush=True)
-#
-#     if modelbox.model == "planck":
-#         readmodel = ReadPlanck(wavel_range=(1e-1, 1e3))
-#         fullspec = readmodel.get_spectrum(
-#             model_param=modelbox.parameters, spec_res=1000.0
-#         )
-#
-#     else:
-#         readmodel = ReadModel(modelbox.model)
-#         fullspec = readmodel.get_model(modelbox.parameters)
-#
-#     flux = simps(fullspec.flux, fullspec.wavelength)
-#
-#     if "parallax" in modelbox.parameters:
-#         luminosity = (
-#             4.0
-#             * np.pi
-#             * (1e3 * constants.PARSEC / fullspec.parameters["parallax"]) ** 2
-#             * flux
-#         )  # (W)
-#
-#     elif "distance" in modelbox.parameters:
-#         luminosity = (
-#             4.0
-#             * np.pi
-#             * (fullspec.parameters["distance"] * constants.PARSEC) ** 2
-#             * flux
-#         )  # (W)
-#
-#         # Analytical solution for a single-component Planck function
-#         # luminosity = 4.*np.pi*(modelbox.parameters['radius']*constants.R_JUP)**2* \
-#         #     constants.SIGMA_SB*modelbox.parameters['teff']**4.
-#
-#     else:
-#         luminosity = (
-#             4.0 * np.pi * (fullspec.parameters["radius"] * constants.R_JUP) ** 2 * flux
-#         )  # (W)
-#
-#     modelbox.parameters["luminosity"] = luminosity / constants.L_SUN  # (Lsun)
-#
-#     print(" [DONE]")
-#
-#     print(
-#         f"Wavelength range (um): {fullspec.wavelength[0]:.2e} - "
-#         f"{fullspec.wavelength[-1]:.2e}"
-#     )
-#
-#     print(f"Luminosity (Lsun): {luminosity/constants.L_SUN:.2e}")
-#
-#     return modelbox
-
-
 @typechecked
 def binary_to_single(param_dict: Dict[str, float], star_index: int) -> Dict[str, float]:
     """
@@ -282,17 +214,7 @@ def binary_to_single(param_dict: Dict[str, float], star_index: int) -> Dict[str,
         elif star_index == 1 and param_key[-1] == "1":
             new_dict[param_key[:-2]] = param_value
 
-        elif param_key in [
-            "teff",
-            "logg",
-            "feh",
-            "c_o_ratio",
-            "fsed",
-            "radius",
-            "distance",
-            "parallax",
-            "ism_ext",
-        ]:
+        elif param_key[-2:] not in ["_0", "_1"]:
             new_dict[param_key] = param_value
 
     return new_dict
@@ -337,6 +259,7 @@ def extract_disk_param(
             "distance",
             "parallax",
             "ism_ext",
+            "ext_av",
         ]:
             new_dict[param_key] = param_value
 
@@ -353,6 +276,7 @@ def apply_obs(
     rot_broad: Optional[float] = None,
     rad_vel: Optional[float] = None,
     cross_sections: Optional[RegularGridInterpolator] = None,
+    ext_model: Optional[str] = None,
 ) -> np.ndarray:
     """
     Function for post-processing of a model spectrum. This will
@@ -376,8 +300,9 @@ def apply_obs(
         wavelength resampling. Not applied if the argument is
         set to ``None``.
     spec_res : float, None
-        Spectral resolution of the data used for the instrumental
-        broadening. Not applied if the argument is set to ``None``.
+        Spectral resolution of the data used for the
+        instrumental broadening. Not applied if the argument
+        is set to ``None`` or np.nan.
     rot_broad : float, None
         Rotational broadening :math:`v\\sin{i}` (km/s). Not
         applied if the argument is set to ``None``.
@@ -387,6 +312,14 @@ def apply_obs(
     cross_sections : RegularGridInterpolator, None
         Interpolated cross sections for fitting extinction by dust
         grains with a log-normal or power-law size distribution.
+    ext_model : str, None
+        Name with the extinction model from the ``dust-extinction``
+        package (see `list of available models
+        <https://dust-extinction.readthedocs.io/en/latest/
+        dust_extinction/choose_model.html>`_). For example,
+        set the argument to ``'CCM89'`` to use the extinction
+        relation from `Cardelli et al. (1989) <https://ui.adsabs.
+        harvard.edu/abs/1989ApJ...345..245C/abstract>`_.
 
     Returns
     -------
@@ -402,47 +335,12 @@ def apply_obs(
     # Apply rotational broadening
 
     if rot_broad is not None:
-        # The fastRotBroad requires constant wavelength steps
-        # Upsample by a factor of 4 to not lose spectral information
-
-        spec_interp = interp1d(model_wavel, model_flux)
-
-        wavel_new = np.linspace(
-            model_wavel[0],
-            model_wavel[-1],
-            4 * model_wavel.size,
-        )
-
-        flux_new = spec_interp(wavel_new)
-
-        # Apply fast rotational broadening
-        # Only to be used on a limited wavelength range
-
-        flux_broad = fastRotBroad(
-            wvl=wavel_new,
-            flux=flux_new,
-            epsilon=0.0,
+        model_flux = rot_int_cmj(
+            wavel=model_wavel,
+            flux=model_flux,
             vsini=rot_broad,
-            effWvl=None,
+            eps=0.0,
         )
-
-        # Interpolate back to the original wavelength sampling
-
-        spec_interp = interp1d(wavel_new, flux_broad)
-        model_flux = spec_interp(model_wavel)
-
-    # Apply radial velocity shift
-
-    if rad_vel is not None:
-        wavel_shift = rad_vel * 1e3 * model_wavel / constants.LIGHT
-
-        spec_interp = interp1d(
-            model_wavel + wavel_shift,
-            model_flux,
-            fill_value="extrapolate",
-        )
-
-        model_flux = spec_interp(model_wavel)
 
     # Apply extinction
 
@@ -456,6 +354,35 @@ def apply_obs(
         )
 
         model_flux *= 10.0 ** (-0.4 * ext_filt)
+
+    if "ext_av" in model_param:
+        import dust_extinction.parameter_averages as dust_ext
+
+        ext_object = getattr(dust_ext, ext_model)()
+
+        if "ext_rv" in model_param:
+            ext_object.Rv = model_param["ext_rv"]
+
+        # Wavelength range (um) for which the extinction is defined
+        ext_wavel = (1.0 / ext_object.x_range[1], 1.0 / ext_object.x_range[0])
+
+        if model_wavel[0] < ext_wavel[0] or model_wavel[-1] > ext_wavel[1]:
+            warnings.warn(
+                "The wavelength range of the model spectrum "
+                f"({model_wavel[0]:.3f}-{model_wavel[-1]:.3f} "
+                "um) does not fully lie within the available "
+                "wavelength range of the extinction model "
+                f"({ext_wavel[0]:.3f}-{ext_wavel[1]:.3f} um). "
+                "The extinction will therefore not be applied "
+                "to fluxes of which the wavelength lies "
+                "outside the range of the extinction model."
+            )
+
+        wavel_select = (model_wavel > ext_wavel[0]) & (model_wavel < ext_wavel[1])
+
+        model_flux[wavel_select] *= ext_object.extinguish(
+            model_wavel[wavel_select] * u.micron, Av=model_param["ext_av"]
+        )
 
     # elif "lognorm_ext" in model_param:
     #     cross_tmp = cross_sections["Generic/Bessell.V"](
@@ -477,7 +404,6 @@ def apply_obs(
     #     n_grains = (
     #         model_param["lognorm_ext"] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
     #     )
-    #     print(n_grains)
     #
     #     model_flux *= np.exp(-cross_tmp * n_grains)
     #
@@ -528,16 +454,57 @@ def apply_obs(
     elif "log_flux_scaling" in model_param:
         model_flux *= 10.0 ** model_param["log_flux_scaling"]
 
+    # Apply radial velocity shift
+
+    if rad_vel is not None:
+        # Wavelength shift in um
+        # rad_vel in km s-1 and constants.LIGHT in m s-1
+        wavel_shift = model_wavel * 1e3 * rad_vel / constants.LIGHT
+
+        # Resampling will introduce a few NaNs at the edge of the flux
+        # array but that should not influence the fit given the total
+        # number of wavelength points of a typical spectrum
+
+        model_flux = spectres_numba(
+            model_wavel,
+            model_wavel + wavel_shift,
+            model_flux,
+            spec_errs=None,
+            fill=np.nan,
+            verbose=False,
+        )
+
     # Apply instrument broadening
 
-    if spec_res is not None:
+    if spec_res is not None and not np.isnan(spec_res):
         model_flux = smooth_spectrum(model_wavel, model_flux, spec_res)
 
     # Resample wavelengths to data
 
     if data_wavel is not None:
-        flux_interp = interp1d(model_wavel, model_flux, bounds_error=True)
-        model_flux = flux_interp(data_wavel)
+        # The 'fill' should not happen because model_wavel is
+        # 20 wavelength points broader than data_wavel, but
+        # spectres sometimes sets the outer fluxes to 'fill'
+        # depending on the spectral resolution of the data
+
+        model_flux = spectres_numba(
+            data_wavel,
+            model_wavel,
+            model_flux,
+            spec_errs=None,
+            fill=np.nan,
+            verbose=False,
+        )
+
+        # Set the flux to the neighboring wavelength
+        # if a NaN is present at the edge.
+        # TODO this is quick hack and not the best solution
+
+        if np.isnan(model_flux[0]):
+            model_flux[0] = model_flux[1]
+
+        if np.isnan(model_flux[-1]):
+            model_flux[0] = model_flux[-2]
 
     # Shift the spectrum by a constant
 
@@ -545,3 +512,147 @@ def apply_obs(
     #     model_flux += model_param["flux_offset"]
 
     return model_flux
+
+
+@typechecked
+def rot_int_cmj(
+    wavel: np.ndarray,
+    flux: np.ndarray,
+    vsini: float,
+    eps: float = 0.6,
+    nr: int = 10,
+    ntheta: int = 100,
+    dif: float = 0.0,
+):
+    """
+    A routine to quickly rotationally broaden a spectrum in linear time.
+    This function has been adopted from `Carvalho & Johns-Krull (2023)
+    <https://ui.adsabs.harvard.edu/abs/2023RNAAS...7...91C/abstract>`_.
+
+    Parameters
+    ----------
+    wavel : np.ndarray
+        Array with the wavelengths.
+    flux : np.ndarray
+        Array with the fluxes
+    vsini : float
+        Projected rotational velocity (km s-1).
+    eps : float
+        Coefficient of the limb darkening law (default: 0.0).
+    nr : int
+        Number of radial bins on the projected disk (default: 10).
+    ntheta : int
+        Number of azimuthal bins in the largest radial annulus
+        (default: 100). Note: the number of bins at each r is
+        int(r*ntheta) where r < 1.
+    dif : float
+        Differential rotation coefficient (default = 0.0), applied
+        according to the law Omeg(th)/Omeg(eq) = (1 - dif/2 - (dif/2)
+        cos(2 th)). Dif = 0.675 reproduces the law proposed by Smith,
+        1994, A&A, Vol. 287, p. 523-534, to unify WTTS and CTTS.
+        Dif = 0.23 is similar to observed solar differential rotation.
+        Note: the th in the expression above is the stellar co-latitude,
+        which is not the same as the integration variable used in the
+        function. This is a disk integration routine.
+
+    Returns
+    -------
+    np.ndarray
+        Array with the rotationally broadened spectrum.
+    """
+
+    ns = np.zeros(flux.shape)
+    tarea = 0.0
+    dr = 1.0 / nr
+
+    for j in range(nr):
+        r = dr / 2.0 + j * dr
+        area = (
+            ((r + dr / 2.0) ** 2 - (r - dr / 2.0) ** 2)
+            / int(ntheta * r)
+            * (1.0 - eps + eps * np.cos(np.arcsin(r)))
+        )
+
+        for k in range(int(ntheta * r)):
+            th = np.pi / int(ntheta * r) + k * 2.0 * np.pi / int(ntheta * r)
+
+            if dif != 0:
+                vl = (
+                    vsini
+                    * r
+                    * np.sin(th)
+                    * (
+                        1.0
+                        - dif / 2.0
+                        - dif / 2.0 * np.cos(2.0 * np.arccos(r * np.cos(th)))
+                    )
+                )
+            else:
+                vl = r * vsini * np.sin(th)
+
+            ns += area * np.interp(
+                wavel + wavel * vl / (1e-3 * constants.LIGHT), wavel, flux
+            )
+            tarea += area
+
+    return ns / tarea
+
+
+@typechecked
+def check_nearest_spec(model_name: str, model_param: Dict[str, float]):
+    """
+    Check if the nearest grid points of the requested model parameters
+    have a spectrum stored in the database. For some grids, spectra
+    are missing for certain parameters, in which case a spectrum with
+    zero fluxes has been stored in the database. Interpolating from
+    such a grid point will therefore give an inaccurate spectrum, so
+    it is important to check if for example the best-fit parameters
+    from a fit are close to grid points with a missing spectrum.
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the atmosphere model.
+    model_param : dict
+        Dictionary with the model parameters.
+
+    Returns
+    -------
+    NoneType
+        None
+    """
+
+    from species.read.read_model import ReadModel
+
+    read_model = ReadModel(model_name)
+    model_points = read_model.get_points()
+
+    near_low = {}
+    near_high = {}
+    param_idx = []
+    for param_key, param_value in model_points.items():
+        near_idx = np.argsort(np.abs(model_param[param_key] - param_value))
+        near_low[param_key] = param_value[near_idx[0]]
+        near_high[param_key] = param_value[near_idx[1]]
+        param_idx.append((near_idx[0], near_idx[1]))
+
+    for comb_item in list(product(*param_idx)):
+        model_param = {}
+        for param_idx, param_key in enumerate(model_points):
+            model_param[param_key] = model_points[param_key][comb_item[param_idx]]
+
+        model_box = read_model.get_data(model_param)
+
+        if np.count_nonzero(model_box.flux) == 0:
+            warnings.warn(
+                "The selected parameters have a nearest grid point for "
+                f"which a spectrum is not available: {model_param}. "
+                "Therefore, zeros had been stored for the spectrum at "
+                "this grid point. Interpolating from this grid point "
+                "will therefore be inaccurate. When using FitModel, it "
+                "is best to adjust the prior range in the 'bounds' "
+                "parameter accordingly to exclude the parameter space "
+                "for which model spectrum is missing. See also details "
+                "printed when the model spectra are added to the "
+                "database with add_model()."
+            )

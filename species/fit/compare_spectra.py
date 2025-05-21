@@ -29,8 +29,8 @@ from species.util.spec_util import smooth_spectrum
 
 class CompareSpectra:
     """
-    Class for comparing the spectrum of an object with
-    a library of empirical or model spectra.
+    Class for comparing one or multiple spectra of an object with a
+    library of empirical spectra or a grid of model spectra.
     """
 
     @typechecked
@@ -83,10 +83,10 @@ class CompareSpectra:
         sptypes: Optional[List[str]] = None,
         av_ext: Optional[Union[List[float], np.ndarray]] = None,
         rad_vel: Optional[Union[List[float], np.ndarray]] = None,
-    ) -> None:
+    ) -> List[Tuple[float, str, str]]:
         """
-        Method for finding the best fitting empirical spectra
-        from a selected library by evaluating the goodness-of-fit
+        Method for finding the best matching empirical spectra
+        from the selected library by evaluating the goodness-of-fit
         statistic from `Cushing et al. (2008) <https://ui.adsabs.
         harvard.edu/abs/2008ApJ...678.1372C/abstract>`_.
 
@@ -124,8 +124,12 @@ class CompareSpectra:
 
         Returns
         -------
-        NoneType
-            None
+        list(tuple(float, str, str))
+            List with the 10 best matching spectra. Each item in the
+            list includes the goodness-of-fit, the object name, and
+            the spectral type. Less than 10 objects are stored if
+            there were less than 10 spectra selected from the
+            ``spec_library``.
         """
 
         w_i = 1.0
@@ -268,11 +272,14 @@ class CompareSpectra:
 
                                 idx_select = np.isfinite(c_numer) & np.isfinite(c_denom)
 
-                                c_k = np.sum(c_numer[idx_select]) / np.sum(c_denom[idx_select])
+                                c_k = np.sum(c_numer[idx_select]) / np.sum(
+                                    c_denom[idx_select]
+                                )
                                 c_k_spec.append(c_k)
 
                                 chi_sq = (
-                                    spec_item[indices, 1][idx_select] - c_k * flux_resample[idx_select]
+                                    spec_item[indices, 1][idx_select]
+                                    - c_k * flux_resample[idx_select]
                                 ) / spec_item[indices, 2][idx_select]
 
                                 g_k += np.sum(w_i * chi_sq**2)
@@ -338,20 +345,32 @@ class CompareSpectra:
 
         print("Best-fitting spectra:")
 
+        best_list = []
+
         if len(gk_select) < 10:
-            for i, gk_item in enumerate(gk_select):
+            for gk_idx, gk_item in enumerate(gk_select):
+                best_list.append((gk_item, name_select[gk_idx], spt_select[gk_idx]))
+
                 print(
-                    f"   {i+1:2d}. G = {gk_item:.2e} -> {name_select[i]}, {spt_select[i]}, "
-                    f"A_V = {av_select[i]:.2f}, RV = {rv_select[i]:.0f} km/s,\n"
-                    f"                      scalings = {ck_select[i]}"
+                    f"   {gk_idx+1:2d}. G = {gk_item:.2e} -> "
+                    "{name_select[gk_idx]}, {spt_select[gk_idx]}, "
+                    f"A_V = {av_select[gk_idx]:.2f}, "
+                    f"RV = {rv_select[gk_idx]:.0f} km/s,\n"
+                    f"                       scalings = {ck_select[gk_idx]}"
                 )
 
         else:
-            for i in range(10):
+            for gk_idx in range(10):
+                best_list.append(
+                    (gk_select[gk_idx], name_select[gk_idx], spt_select[gk_idx])
+                )
+
                 print(
-                    f"   {i+1:2d}. G = {gk_select[i]:.2e} -> {name_select[i]}, {spt_select[i]}, "
-                    f"A_V = {av_select[i]:.2f}, RV = {rv_select[i]:.0f} km/s,\n"
-                    f"                      scalings = {ck_select[i]}"
+                    f"   {gk_idx+1:2d}. G = {gk_select[gk_idx]:.2e} -> "
+                    f"{name_select[gk_idx]}, {spt_select[gk_idx]}, "
+                    f"A_V = {av_select[gk_idx]:.2f}, "
+                    f"RV = {rv_select[gk_idx]:.0f} km/s,\n"
+                    f"                       scalings = {ck_select[gk_idx]}"
                 )
 
         from species.data.database import Database
@@ -371,6 +390,8 @@ class CompareSpectra:
             spec_library=spec_library,
         )
 
+        return best_list
+
     @typechecked
     def compare_model(
         self,
@@ -383,10 +404,15 @@ class CompareSpectra:
         inc_phot: Union[List[str], bool] = False,
     ) -> None:
         """
-        Method for finding the best-fit spectrum from a grid of
-        atmospheric model spectra by evaluating the goodness-of-fit
+        Method for evaluating the goodness-of-fit
         statistic from `Cushing et al. (2008) <https://ui.adsabs.
-        harvard.edu/abs/2008ApJ...678.1372C/abstract>`_.
+        harvard.edu/abs/2008ApJ...678.1372C/abstract>`_ for all
+        combination of parameters in a grid of model spectra.
+        For each set of parameters, the model will be scaled in
+        order to minimize the goodness-of-fit. The scaling gives
+        the radius since the distance is adopted from the selected
+        ``object_name``. The model spectra are not interpolated so
+        only parameters available from the grid are tested.
 
         Parameters
         ----------
@@ -404,12 +430,12 @@ class CompareSpectra:
         fix_logg : float, None
             Fix the value of :math:`\\log(g)`, for example if estimated
             from gravity-sensitive spectral features. Typically,
-            :math:`\\log(g)` can not be accurately determined when
+            :math:`\\log(g)` cannot be accurately determined when
             comparing the spectra over a broad wavelength range.
         scale_spec : list(str), None
             List with names of observed spectra to which an additional
-            flux scaling is applied to best match the spectral
-            templates. This can be used to account for a difference in
+            flux scaling is applied to best match each model spectrum.
+            This parameter can be used to account for a difference in
             absolute calibration between spectra.
         weights : bool
             Apply a weighting of the spectra and photometry based on
@@ -619,21 +645,43 @@ class CompareSpectra:
                                     model_phot[phot_item] = syn_phot.spectrum_to_flux(
                                         model_box_full.wavelength, model_box_full.flux
                                     )[0]
-                                    model_list.append(np.array([model_phot[phot_item]]))
 
                                     phot_flux = object_flux[phot_item]
-                                    phot_data = np.array(
-                                        [
-                                            [
-                                                phot_wavel[phot_item],
-                                                phot_flux[0],
-                                                phot_flux[1],
-                                            ]
-                                        ]
-                                    )
-                                    data_list.append(phot_data)
 
-                                    weights_list.append(np.array([w_i[phot_item]]))
+                                    if phot_flux.ndim == 1:
+                                        phot_data = np.array(
+                                            [
+                                                [
+                                                    phot_wavel[phot_item],
+                                                    phot_flux[0],
+                                                    phot_flux[1],
+                                                ]
+                                            ]
+                                        )
+                                        data_list.append(phot_data)
+                                        model_list.append(
+                                            np.array([model_phot[phot_item]])
+                                        )
+                                        weights_list.append(np.array([w_i[phot_item]]))
+
+                                    else:
+                                        for phot_idx in range(phot_flux.shape[1]):
+                                            phot_data = np.array(
+                                                [
+                                                    [
+                                                        phot_wavel[phot_item],
+                                                        phot_flux[0][phot_idx],
+                                                        phot_flux[1][phot_idx],
+                                                    ]
+                                                ]
+                                            )
+                                            data_list.append(phot_data)
+                                            model_list.append(
+                                                np.array([model_phot[phot_item]])
+                                            )
+                                            weights_list.append(
+                                                np.array([w_i[phot_item]])
+                                            )
 
                                 data_list = np.concatenate(data_list)
                                 model_list = np.concatenate(model_list)
@@ -788,7 +836,7 @@ class CompareSpectra:
             coord_points=coord_points,
             object_name=self.object_name,
             spec_name=self.spec_name,
-            model=model,
+            model_name=model,
             scale_spec=scale_spec,
             extra_scaling=extra_scaling,
             inc_phot=inc_phot,

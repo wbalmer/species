@@ -6,8 +6,6 @@ from typing import List, Union
 
 import numpy as np
 
-from spectres import spectres
-
 from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_filter import ReadFilter
 from species.util.spec_util import smooth_spectrum
@@ -195,6 +193,7 @@ class ModelBox(Box):
         self.contribution = None
         self.bol_flux = None
         self.spec_res = None
+        self.extra_out = None
 
     def smooth_spectrum(self, spec_res: float) -> None:
         """
@@ -233,6 +232,8 @@ class ModelBox(Box):
         NoneType
             None
         """
+
+        from spectres import spectres
 
         self.flux = spectres(
             wavel_resample,
@@ -511,6 +512,8 @@ def create_box(boxtype, **kwargs):
             box.bol_flux = kwargs["bol_flux"]
         if "spec_res" in kwargs:
             box.spec_res = kwargs["spec_res"]
+        if "extra_out" in kwargs:
+            box.extra_out = kwargs["extra_out"]
 
     elif boxtype == "object":
         box = ObjectBox()
@@ -546,13 +549,19 @@ def create_box(boxtype, **kwargs):
         box = ResidualsBox()
         box.name = kwargs["name"]
         box.photometry = kwargs["photometry"]
-        box.spectrum = kwargs["spectrum"]
+        if "spectrum" in kwargs:
+            box.spectrum = kwargs["spectrum"]
+        if "model_name" in kwargs:
+            box.model_name = kwargs["model_name"]
         if "chi2_red" in kwargs:
             box.chi2_red = kwargs["chi2_red"]
 
     elif boxtype == "samples":
         box = SamplesBox()
-        box.spectrum = kwargs["spectrum"]
+        if "spectrum" in kwargs:
+            box.spectrum = kwargs["spectrum"]
+        if "model_name" in kwargs:
+            box.model_name = kwargs["model_name"]
         box.parameters = kwargs["parameters"]
         box.samples = kwargs["samples"]
         box.ln_prob = kwargs["ln_prob"]

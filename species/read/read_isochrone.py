@@ -49,7 +49,8 @@ class ReadIsochrone:
         self,
         tag: Optional[str] = None,
         create_regular_grid: bool = False,
-        extrapolate: bool = False,
+        verbose: bool = True,
+        interp_method: str = "linear",
     ) -> None:
         """
         Parameters
@@ -63,7 +64,7 @@ class ReadIsochrone:
         create_regular_grid : bool
             Evolutionary grids can be irregular in the (age, mass)
             space. By setting ``create_regular_grid=True``, the
-            grid will be interpolated and extrapolate onto
+            grid will be interpolated and extrapolated onto
             a regular grid that is based on all the unique age
             and mass values of the original grid. The
             resampling of the evolutionary parameters
@@ -76,12 +77,20 @@ class ReadIsochrone:
             since there might be inaccuracies in the extrapolated
             parts of the parameter space, in particular for the
             cooling curves extracted with
-            :func:`~species.read.read_isochrone.ReadIsochrone.get_cooling_curve`.
-        extrapolate : str
-            DEPRECATED: This parameter has been renamed to
-            ``create_regular_grid`` and will be removed in a future
-            release. Please use the ``create_regular_grid``
-            parameter instead.
+            :func:`~species.read.read_isochrone.ReadIsochrone.get_cooling_track`.
+            This is therefore an experimental parameter.
+        verbose : bool
+            Print output.
+        interp_method : str
+            Interpolation method for the isochrone data. The argument
+            should be either 'linear', for using a linear 2D
+            interpolation with `LinearNDInterpolator
+            <https://docs.scipy.org/doc/scipy/reference/
+            generated/scipy.interpolate.LinearNDInterpolator.html>`_,
+            or 'cubic', for using a 2D cubic interpolation with
+            `CloughTocher2DInterpolator <https://docs.scipy.org/
+            doc/scipy/reference/generated/scipy.interpolate.
+            CloughTocher2DInterpolator.html>`_ (default: 'linear').
 
         Returns
         -------
@@ -89,27 +98,14 @@ class ReadIsochrone:
             None
         """
 
-        print_section("Read isochrone grid")
-
         self.tag = tag
-        self.extrapolate = extrapolate
         self.create_regular_grid = create_regular_grid
+        self.verbose = verbose
 
-        print(f"Database tag: {self.tag}")
-        print(f"Create regular grid: {self.create_regular_grid}")
-
-        if self.extrapolate:
-            warnings.warn(
-                "The 'extrapolate' parameter has been "
-                "renamed to 'create_regular_grid' and "
-                "will be removed in a future release.",
-                DeprecationWarning,
-            )
-
-            if not self.create_regular_grid:
-                warnings.warn(
-                    "Setting 'create_regular_grid=True' since 'extrapolate=True'."
-                )
+        if self.verbose:
+            print_section("Read isochrone grid")
+            print(f"Database tag: {self.tag}")
+            print(f"Create regular grid: {self.create_regular_grid}")
 
         config_file = os.path.join(os.getcwd(), "species_config.ini")
 
@@ -140,58 +136,96 @@ class ReadIsochrone:
                     f"tags are found in the database: {tag_list}"
                 )
 
-        self.mag_models = [
-            "ames",
-            "atmo",
-            "baraffe",
-            "bt-settl",
-            "linder2019",
-            "manual",
-            "nextgen",
-        ]
-
         # Connect isochrone model with atmosphere model
-        # key = isochrone model, value = atmosphere model
+        # key = isochrone model, value = atmosphere model, extra_param
         self.match_model = {
-            "ames-cond": "ames-cond",
-            "ames-dusty": "ames-dusty",
-            "atmo-ceq": "atmo-ceq",
-            "atmo-neq-strong": "atmo-neq-strong",
-            "atmo-neq-weak": "atmo-neq-weak",
-            "bt-settl": "bt-settl",
-            "linder2019-petitCODE-metal_-0.4": "petitcode-linder2019-clear",
-            "linder2019-petitCODE-metal_0.0": "petitcode-linder2019-clear",
-            "linder2019-petitCODE-metal_0.4": "petitcode-linder2019-clear",
-            "linder2019-petitCODE-metal_0.8": "petitcode-linder2019-clear",
-            "linder2019-petitCODE-metal_1.2": "petitcode-linder2019-clear",
-            "linder2019-petitCODE-metal_-0.4-fsed_1.0": "petitcode-linder2019-cloudy",
-            "linder2019-petitCODE-metal_0.0-fsed_1.0": "petitcode-linder2019-cloudy",
-            "linder2019-petitCODE-metal_0.4-fsed_1.0": "petitcode-linder2019-cloudy",
-            "linder2019-petitCODE-metal_0.8-fsed_1.0": "petitcode-linder2019-cloudy",
-            "linder2019-petitCODE-metal_1.2-fsed_1.0": "petitcode-linder2019-cloudy",
-            "saumon2008-nc_solar": "saumon2008-clear",
-            "saumon2008-f2_solar": "saumon2008-cloudy",
-            "sonora+0.0": "sonora-bobcat",
+            "ames-cond": ("ames-cond", None),
+            "ames-dusty": ("ames-dusty", None),
+            "atmo-ceq": ("atmo-ceq", None),
+            "atmo-neq-strong": ("atmo-neq-strong", None),
+            "atmo-neq-weak": ("atmo-neq-weak", None),
+            "bt-settl": ("bt-settl", None),
+            "linder2019-petitCODE-metal_-0.4": (
+                "petitcode-linder2019-clear",
+                {"feh": -0.4},
+            ),
+            "linder2019-petitCODE-metal_0.0": (
+                "petitcode-linder2019-clear",
+                {"feh": 0.0},
+            ),
+            "linder2019-petitCODE-metal_0.4": (
+                "petitcode-linder2019-clear",
+                {"feh": 0.4},
+            ),
+            "linder2019-petitCODE-metal_0.8": (
+                "petitcode-linder2019-clear",
+                {"feh": 0.8},
+            ),
+            "linder2019-petitCODE-metal_1.2": (
+                "petitcode-linder2019-clear",
+                {"feh": 1.2},
+            ),
+            "linder2019-petitCODE-metal_-0.4-fsed_1.0": (
+                "petitcode-linder2019-cloudy",
+                {"feh": -0.4},
+            ),
+            "linder2019-petitCODE-metal_0.0-fsed_1.0": (
+                "petitcode-linder2019-cloudy",
+                {"feh": 0.0},
+            ),
+            "linder2019-petitCODE-metal_0.4-fsed_1.0": (
+                "petitcode-linder2019-cloudy",
+                {"feh": 0.4},
+            ),
+            "linder2019-petitCODE-metal_0.8-fsed_1.0": (
+                "petitcode-linder2019-cloudy",
+                {"feh": 0.8},
+            ),
+            "linder2019-petitCODE-metal_1.2-fsed_1.0": (
+                "petitcode-linder2019-cloudy",
+                {"feh": 1.0},
+            ),
+            "saumon2008-nc_solar": ("saumon2008-clear", None),
+            "saumon2008-f2_solar": ("saumon2008-cloudy", None),
+            "sonora-0.5": ("sonora-bobcat", {"feh": -0.5}),
+            "sonora+0.0": ("sonora-bobcat", {"feh": 0.0}),
+            "sonora+0.5": ("sonora-bobcat", {"feh": 0.5}),
+            "sonora-diamondback-hybrid-0.5": ("sonora-diamondback", {"feh": -0.5}),
+            "sonora-diamondback-hybrid+0.0": ("sonora-diamondback", {"feh": 0.0}),
+            "sonora-diamondback-hybrid+0.5": ("sonora-diamondback", {"feh": 0.5}),
+            "sonora-diamondback-hybrid-grav-0.5": ("sonora-diamondback", {"feh": -0.5}),
+            "sonora-diamondback-hybrid-grav+0.0": ("sonora-diamondback", {"feh": 0.0}),
+            "sonora-diamondback-hybrid-grav+0.5": ("sonora-diamondback", {"feh": 0.5}),
+            "sonora-diamondback-nc-0.5": ("sonora-bobcat", {"feh": -0.5}),
+            "sonora-diamondback-nc+0.0": ("sonora-bobcat", {"feh": 0.0}),
+            "sonora-diamondback-nc+0.5": ("sonora-bobcat", {"feh": 0.5}),
         }
 
         # Set attribute with extra parameters
         # The attribute will be overwritten by any of
         # the methods that have the extra_param parameter
 
-        self.extra_param = None
+        if self.tag in self.match_model:
+            self.extra_param = self.match_model[self.tag][1]
 
-        if self.tag.split("-")[0] == "linder2019":
-            self.extra_param = {}
-            tag_split = self.tag.split("_")
+            if self.verbose:
+                print(f"\nSetting 'extra_param' attribute: {self.extra_param}")
 
-            if len(tag_split) == 2:
-                self.extra_param["feh"] = float(tag_split[1])
+        else:
+            self.extra_param = None
 
-            elif len(tag_split) == 3:
-                self.extra_param["feh"] = float(tag_split[1][:-5])
-                self.extra_param["fsed"] = float(tag_split[2])
+        self.teff_interp = None
+        self.loglum_interp = None
+        self.logg_interp = None
+        self.radius_interp = None
+        self.mass_interp = None
+        self.interp_method = interp_method
 
-            print(f"\nSetting 'extra_param' attribute: {self.extra_param}")
+        if self.interp_method not in ["linear", "cubic"]:
+            raise ValueError(
+                "The argument of 'interp_method' should "
+                "be set to 'linear' or 'cubic'."
+            )
 
     @typechecked
     def _read_data(
@@ -368,7 +402,7 @@ class ReadIsochrone:
 
         if atmospheric_model is None:
             if self.tag in self.match_model:
-                atmospheric_model = self.match_model[self.tag]
+                atmospheric_model = self.match_model[self.tag][0]
             else:
                 raise ValueError(
                     "Can not find the atmosphere model "
@@ -378,12 +412,12 @@ class ReadIsochrone:
                 )
 
         elif self.tag in self.match_model:
-            if atmospheric_model != self.match_model[self.tag]:
+            if atmospheric_model != self.match_model[self.tag][0]:
                 warnings.warn(
                     "Please note that you have selected "
                     f"'{atmospheric_model}' as "
                     f"atmospheric model for '{self.tag}' "
-                    f"while '{self.match_model[self.tag]}'"
+                    f"while '{self.match_model[self.tag][0]}'"
                     " is the atmospheric model that is "
                     f"self-consistently associated with "
                     f"'{self.tag}'. It is recommended "
@@ -448,6 +482,20 @@ class ReadIsochrone:
 
         if len(extra_param) == 0 and self.extra_param is not None:
             extra_param = self.extra_param.copy()
+
+        if self.tag in [
+            "sonora-diamondback-hybrid-0.5",
+            "sonora-diamondback-hybrid+0.0",
+            "sonora-diamondback-hybrid+0.5",
+            "sonora-diamondback-hybrid-grav-0.5",
+            "sonora-diamondback-hybrid-grav+0.0",
+            "sonora-diamondback-hybrid-grav+0.5",
+        ]:
+            # See https://zenodo.org/records/12735103
+            # For Teff < 1300 K there were no clouds included in the
+            # model so best to use Sonora Bobcat for the spectra?
+            if model_param["teff"] > 1300.0:
+                extra_param["fsed"] = 2.0
 
         for key, value in param_bounds.items():
             if key not in model_param:
@@ -514,6 +562,7 @@ class ReadIsochrone:
         masses: Optional[np.ndarray] = None,
         filter_mag: Optional[str] = None,
         filters_color: Optional[Tuple[str, str]] = None,
+        param_interp: Optional[List[str]] = None,
     ) -> IsochroneBox:
         """
         Function for interpolating an isochrone.
@@ -535,12 +584,25 @@ class ReadIsochrone:
             Filter names for the color as listed in the file with the
             isochrone data. Not selected if set to ``None`` or if only
             evolutionary tracks are available.
+        param_interp : list(str), None
+            List with the parameters that will be interpolated from
+            the isochrone grid. By default, all parameters will
+            be interpolated and stored in the ``IsochroneBox``
+            when the argument is set to ``None``. However, to
+            decrease the computation time, a subset of parameters
+            can be selected from 'log_lum', 'teff', 'logg', 'radius'.
 
         Returns
         -------
         species.core.box.IsochroneBox
             Box with the isochrone.
         """
+
+        if self.interp_method == "linear":
+            from scipy.interpolate import LinearNDInterpolator as grid_interp
+
+        elif self.interp_method == "cubic":
+            from scipy.interpolate import CloughTocher2DInterpolator as grid_interp
 
         color = None
         mag_abs = None
@@ -563,12 +625,18 @@ class ReadIsochrone:
             age_select = iso_age == iso_age[idx_min]
             masses = np.unique(iso_mass[age_select])  # (Mjup)
 
+            if masses.size < 5:
+                # This can happen if the age sampling in the
+                # isochrone grid was different for each mass,
+                # for example baraffe+2015
+                masses = np.unique(iso_mass)  # (Mjup)
+
         age_points = np.full(masses.shape[0], age)  # (Myr)
         grid_points = np.column_stack([iso_age, iso_mass])
 
         filters = self.get_filters()
 
-        if model in self.mag_models:
+        if filters is not None:
             if filters_color is not None:
                 if filters_color[0] in filters:
                     index_color_1 = filters.index(filters_color[0])
@@ -596,20 +664,6 @@ class ReadIsochrone:
                         f"filters: {filters}"
                     )
 
-            if filter_mag is not None:
-                if filter_mag in filters:
-                    index_mag = filters.index(filter_mag)
-
-                else:
-                    raise ValueError(
-                        f"Magnitudes for the selected "
-                        f"'{filter_mag}' filter are not "
-                        f"found in the '{self.tag}' data. "
-                        f"Please select one of the "
-                        f"following filters: {filters}"
-                    )
-
-            if filters_color is not None:
                 mag_color_1 = griddata(
                     points=grid_points,
                     values=iso_mag[:, index_color_1],
@@ -631,6 +685,18 @@ class ReadIsochrone:
                 color = mag_color_1 - mag_color_2
 
             if filter_mag is not None:
+                if filter_mag in filters:
+                    index_mag = filters.index(filter_mag)
+
+                else:
+                    raise ValueError(
+                        f"Magnitudes for the selected "
+                        f"'{filter_mag}' filter are not "
+                        f"found in the '{self.tag}' data. "
+                        f"Please select one of the "
+                        f"following filters: {filters}"
+                    )
+
                 mag_abs = griddata(
                     points=grid_points,
                     values=iso_mag[:, index_mag],
@@ -640,41 +706,75 @@ class ReadIsochrone:
                     rescale=False,
                 )
 
-        teff = griddata(
-            points=grid_points,
-            values=iso_teff,
-            xi=np.stack((age_points, masses), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        # Interpolation of Teff
 
-        log_lum = griddata(
-            points=grid_points,
-            values=iso_loglum,
-            xi=np.stack((age_points, masses), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.teff_interp is None and (
+            param_interp is None or "teff" in param_interp
+        ):
+            self.teff_interp = grid_interp(
+                points=grid_points,
+                values=iso_teff,
+                fill_value="nan",
+                rescale=False,
+            )
 
-        logg = griddata(
-            points=grid_points,
-            values=iso_logg,
-            xi=np.stack((age_points, masses), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.teff_interp is not None:
+            teff = self.teff_interp(np.stack((age_points, masses), axis=1))
+        else:
+            teff = None
 
-        radius = griddata(
-            points=grid_points,
-            values=iso_radius,
-            xi=np.stack((age_points, masses), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        # Interpolation of log(L/Lsun)
+
+        if self.loglum_interp is None and (
+            param_interp is None or "log_lum" in param_interp
+        ):
+            self.loglum_interp = grid_interp(
+                points=grid_points,
+                values=iso_loglum,
+                fill_value="nan",
+                rescale=False,
+            )
+
+        if self.loglum_interp is not None:
+            log_lum = self.loglum_interp(np.stack((age_points, masses), axis=1))
+        else:
+            log_lum = None
+
+        # Interpolation of log(g)
+
+        if self.logg_interp is None and (
+            param_interp is None or "logg" in param_interp
+        ):
+            self.logg_interp = grid_interp(
+                points=grid_points,
+                values=iso_logg,
+                fill_value="nan",
+                rescale=False,
+            )
+
+        if self.logg_interp is not None:
+            logg = self.logg_interp(np.stack((age_points, masses), axis=1))
+        else:
+            logg = None
+
+        # Interpolation of radius
+
+        if self.radius_interp is None and (
+            param_interp is None or "radius" in param_interp
+        ):
+            self.radius_interp = grid_interp(
+                points=grid_points,
+                values=iso_radius,
+                fill_value="nan",
+                rescale=False,
+            )
+
+        if self.radius_interp is not None:
+            radius = self.radius_interp(np.stack((age_points, masses), axis=1))
+        else:
+            radius = None
+
+        # Check if magnitude and color are found
 
         if mag_abs is None and filter_mag is not None:
             warnings.warn(
@@ -710,7 +810,7 @@ class ReadIsochrone:
         )
 
     @typechecked
-    def get_cooling_curve(
+    def get_cooling_track(
         self,
         mass: float,
         ages: Optional[np.ndarray] = None,
@@ -745,6 +845,12 @@ class ReadIsochrone:
             Box with the cooling curve.
         """
 
+        if self.interp_method == "linear":
+            from scipy.interpolate import LinearNDInterpolator as grid_interp
+
+        elif self.interp_method == "cubic":
+            from scipy.interpolate import CloughTocher2DInterpolator as grid_interp
+
         color = None
         mag_abs = None
 
@@ -771,7 +877,7 @@ class ReadIsochrone:
 
         filters = self.get_filters()
 
-        if model in self.mag_models:
+        if filters is not None:
             if filters_color is not None:
                 index_color_1 = filters.index(filters_color[0])
                 index_color_2 = filters.index(filters_color[1])
@@ -810,41 +916,45 @@ class ReadIsochrone:
                     rescale=False,
                 )
 
-        teff = griddata(
-            points=grid_points,
-            values=iso_teff,
-            xi=np.stack((ages, mass_points), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.teff_interp is None:
+            self.teff_interp = grid_interp(
+                points=grid_points,
+                values=iso_teff,
+                fill_value="nan",
+                rescale=False,
+            )
 
-        log_lum = griddata(
-            points=grid_points,
-            values=iso_loglum,
-            xi=np.stack((ages, mass_points), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        teff = self.teff_interp(np.stack((ages, mass_points), axis=1))
 
-        logg = griddata(
-            points=grid_points,
-            values=iso_logg,
-            xi=np.stack((ages, mass_points), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.loglum_interp is None:
+            self.loglum_interp = grid_interp(
+                points=grid_points,
+                values=iso_loglum,
+                fill_value="nan",
+                rescale=False,
+            )
 
-        radius = griddata(
-            points=grid_points,
-            values=iso_radius,
-            xi=np.stack((ages, mass_points), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        log_lum = self.loglum_interp(np.stack((ages, mass_points), axis=1))
+
+        if self.logg_interp is None:
+            self.logg_interp = grid_interp(
+                points=grid_points,
+                values=iso_logg,
+                fill_value="nan",
+                rescale=False,
+            )
+
+        logg = self.logg_interp(np.stack((ages, mass_points), axis=1))
+
+        if self.radius_interp is None:
+            self.radius_interp = grid_interp(
+                points=grid_points,
+                values=iso_radius,
+                fill_value="nan",
+                rescale=False,
+            )
+
+        radius = self.radius_interp(np.stack((ages, mass_points), axis=1))
 
         if mag_abs is None and filter_mag is not None:
             warnings.warn(
@@ -1263,6 +1373,12 @@ class ReadIsochrone:
             Array with masses (:math:`M_\\mathrm{J}`).
         """
 
+        if self.interp_method == "linear":
+            from scipy.interpolate import LinearNDInterpolator as grid_interp
+
+        elif self.interp_method == "cubic":
+            from scipy.interpolate import CloughTocher2DInterpolator as grid_interp
+
         # Read isochrone data
 
         (
@@ -1282,16 +1398,15 @@ class ReadIsochrone:
 
         age_points = np.full(log_lum.size, age)  # (Myr)
 
-        mass = griddata(
-            points=grid_points,
-            values=iso_mass,
-            xi=np.stack((age_points, log_lum), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.mass_interp is None:
+            self.mass_interp = grid_interp(
+                points=grid_points,
+                values=iso_mass,
+                fill_value="nan",
+                rescale=False,
+            )
 
-        return mass
+        return self.mass_interp(np.stack((age_points, log_lum), axis=1))
 
     @typechecked
     def get_radius(
@@ -1318,6 +1433,12 @@ class ReadIsochrone:
             Array with radii (:math:`R_\\mathrm{J}`).
         """
 
+        if self.interp_method == "linear":
+            from scipy.interpolate import LinearNDInterpolator as grid_interp
+
+        elif self.interp_method == "cubic":
+            from scipy.interpolate import CloughTocher2DInterpolator as grid_interp
+
         # Read isochrone data
 
         (
@@ -1337,16 +1458,15 @@ class ReadIsochrone:
 
         age_points = np.full(log_lum.size, age)  # (Myr)
 
-        radius = griddata(
-            points=grid_points,
-            values=iso_radius,
-            xi=np.stack((age_points, log_lum), axis=1),
-            method="linear",
-            fill_value="nan",
-            rescale=False,
-        )
+        if self.radius_interp is None:
+            self.radius_interp = grid_interp(
+                points=grid_points,
+                values=iso_radius,
+                fill_value="nan",
+                rescale=False,
+            )
 
-        return radius
+        return self.radius_interp(np.stack((age_points, log_lum), axis=1))
 
     @typechecked
     def get_filters(self) -> Optional[List[str]]:

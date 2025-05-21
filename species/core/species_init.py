@@ -3,18 +3,18 @@ Module for setting up species in the working folder.
 """
 
 import json
-import os
 import socket
 import urllib.request
 
-from typing import Optional
-
 from configparser import ConfigParser
-from importlib.util import find_spec
-from typeguard import typechecked
+from pathlib import Path, PosixPath, WindowsPath
+from typing import Optional, Union
 
 import h5py
-import species
+
+from typeguard import typechecked
+
+from .._version import __version__, __version_tuple__
 
 
 class SpeciesInit:
@@ -25,11 +25,13 @@ class SpeciesInit:
     """
 
     @typechecked
-    def __init__(self, database_file: Optional[str] = None) -> None:
+    def __init__(
+        self, database_file: Optional[Union[str, PosixPath, WindowsPath]] = None
+    ) -> None:
         """
         Parameters
         ----------
-        database_file : str, None
+        database_file : str, PosixPath, WindowsPath, None
             Path to the HDF5 database that is stored as
             `species_database.hdf5`. Setting the argument will
             overwrite the database path in the configuration file.
@@ -42,12 +44,15 @@ class SpeciesInit:
             None
         """
 
-        species_version = species.__version__
-        species_msg = f"species v{species_version}"
+        print("=======\nspecies\n=======")
 
-        print(len(species_msg) * "=")
-        print(species_msg)
-        print(len(species_msg) * "=")
+        # Check if there is a new version available
+
+        species_version = (
+            f"{__version_tuple__[0]}."
+            f"{__version_tuple__[1]}."
+            f"{__version_tuple__[2]}"
+        )
 
         try:
             pypi_url = "https://pypi.org/pypi/species/json"
@@ -55,24 +60,40 @@ class SpeciesInit:
             with urllib.request.urlopen(pypi_url, timeout=1.0) as open_url:
                 url_content = open_url.read()
                 url_data = json.loads(url_content)
-                latest_version = url_data["info"]["version"]
+                pypi_version = url_data["info"]["version"]
 
         except (urllib.error.URLError, socket.timeout):
-            latest_version = None
+            pypi_version = None
 
-        if latest_version is not None and species_version != latest_version:
-            print(f"\n -> A new version ({latest_version}) is available!")
+        if pypi_version is not None:
+            pypi_split = pypi_version.split(".")
+            current_split = species_version.split(".")
+
+            new_major = (pypi_split[0] == current_split[0]) & (
+                pypi_split[1] > current_split[1]
+            )
+
+            new_minor = (
+                (pypi_split[0] == current_split[0])
+                & (pypi_split[1] == current_split[1])
+                & (pypi_split[2] > current_split[2])
+            )
+
+        print(f"\nVersion: {__version__}")
+
+        if pypi_version is not None and (new_major | new_minor):
+            print(f"\n -> A new version ({pypi_version}) is available!")
             print(" -> It is recommended to update to the latest version")
             print(" -> See https://github.com/tomasstolker/species for details")
 
-        working_folder = os.path.abspath(os.getcwd())
-        print(f"\nWorking folder: {working_folder}")
+        working_folder = Path.cwd()
+        print(f"Working folder: {working_folder}")
 
-        config_file = os.path.join(working_folder, "species_config.ini")
+        config_file = working_folder / "species_config.ini"
 
         config = ConfigParser(allow_no_value=True)
 
-        if os.path.isfile(config_file):
+        if config_file.exists():
             print(f"\nConfiguration file: {config_file}")
 
         else:
@@ -86,30 +107,39 @@ class SpeciesInit:
             # config.set('species', '; File with the HDF5 database')
             config.set("species", "vega_mag", "0.03")
 
-            with open(config_file, "w") as file_obj:
+            with open(config_file, "w", encoding="utf-8") as file_obj:
                 config.write(file_obj)
 
             print(" [DONE]")
 
         config.read(config_file)
+        config_update = False
 
         if database_file is None:
             if "database" in config["species"]:
-                database_file = os.path.abspath(config["species"]["database"])
+                database_file = Path(config["species"]["database"])
 
             else:
-                database_file = "species_database.hdf5"
+                database_file = Path("./species_database.hdf5")
                 config.set("species", "database", "species_database.hdf5")
+                config_update = True
 
         else:
-            config.set("species", "database", database_file)
+            if isinstance(database_file, str):
+                config.set("species", "database", database_file)
+                database_file = Path(database_file)
+            else:
+                config.set("species", "database", str(database_file))
+
+            config_update = True
 
         if "data_folder" in config["species"]:
-            data_folder = os.path.abspath(config["species"]["data_folder"])
+            data_folder = Path(config["species"]["data_folder"])
 
         else:
-            data_folder = "./data/"
+            data_folder = Path("./data/")
             config.set("species", "data_folder", "./data/")
+            config_update = True
 
         if "vega_mag" in config["species"]:
             vega_mag = config["species"]["vega_mag"]
@@ -117,11 +147,16 @@ class SpeciesInit:
         else:
             vega_mag = 0.03
             config.set("species", "vega_mag", "0.03")
+            config_update = True
 
-        with open(config_file, "w", encoding="utf-8") as file_obj:
-            config.write(file_obj)
+        if config_update:
+            # If condition is needed because the file should
+            # not be opened when using MPI and the config
+            # file is already present and no need to update
+            with open(config_file, "w", encoding="utf-8") as file_obj:
+                config.write(file_obj)
 
-        if os.path.isfile(database_file):
+        if database_file.exists():
             print(f"Database file: {database_file}")
 
         else:
@@ -130,12 +165,12 @@ class SpeciesInit:
             h5_file.close()
             print(" [DONE]")
 
-        if os.path.exists(data_folder):
+        if data_folder.exists():
             print(f"Data folder: {data_folder}")
 
         else:
             print("Creating data folder...", end="", flush=True)
-            os.makedirs(data_folder)
+            data_folder.mkdir()
             print(" [DONE]")
 
         print("\nConfiguration settings:")
@@ -143,10 +178,7 @@ class SpeciesInit:
         print(f"   - Data folder: {data_folder}")
         print(f"   - Magnitude of Vega: {vega_mag}")
 
-        if find_spec("mpi4py") is None:
-            print("\nMultiprocessing: mpi4py not installed")
-
-        else:
+        try:
             from mpi4py import MPI
 
             # Rank of this process in a communicator
@@ -157,3 +189,6 @@ class SpeciesInit:
 
             print("\nMultiprocessing: mpi4py installed")
             print(f"Process number {mpi_rank+1:d} out of {mpi_size:d}...")
+
+        except ImportError:
+            print("\nMultiprocessing: mpi4py not installed")

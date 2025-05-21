@@ -38,8 +38,16 @@ def check_dust_database() -> str:
     database_path = config["species"]["database"]
     data_folder = config["species"]["data_folder"]
 
-    with h5py.File(database_path, "a") as hdf5_file:
-        if "dust" not in hdf5_file:
+    with h5py.File(database_path, "r") as hdf5_file:
+        # Check if the data are found in 'r' mode because the
+        # 'a' mode is not possible when using multiprocessing
+        if "dust" in hdf5_file:
+            data_found = True
+        else:
+            data_found = False
+
+    if not data_found:
+        with h5py.File(database_path, "a") as hdf5_file:
             add_optical_constants(data_folder, hdf5_file)
             add_cross_sections(data_folder, hdf5_file)
 
@@ -395,8 +403,8 @@ def interp_lognorm() -> Tuple[
     #
     #             cross_tmp = cross_interp(filt_trans[:, 0])
     #
-    #             integral1 = np.trapz(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-    #             integral2 = np.trapz(filt_trans[:, 1], x=filt_trans[:, 0])
+    #             integral1 = np.trapezoid(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
+    #             integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
     #
     #             # Filter-weighted average of the extinction cross section
     #             cross_phot[i, j] = integral1 / integral2
@@ -473,8 +481,8 @@ def interp_powerlaw() -> Tuple[
     #
     #             cross_tmp = cross_interp(filt_trans[:, 0])
     #
-    #             integral1 = np.trapz(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-    #             integral2 = np.trapz(filt_trans[:, 1], x=filt_trans[:, 0])
+    #             integral1 = np.trapezoid(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
+    #             integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
     #
     #             # Filter-weighted average of the extinction cross section
     #             cross_phot[i, j] = integral1 / integral2

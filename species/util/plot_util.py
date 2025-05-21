@@ -64,6 +64,11 @@ def sptype_to_index(
         ]
 
         for i, item in enumerate(spec_types):
+            if isinstance(item, bytes):
+                # Catch SpT names that were read from FITS files
+                # and stored as bytes in the HDF5 database
+                item = item.decode("utf-8")
+
             if item[0:2] in ["O0", "O1", "O2", "O3", "O4"]:
                 spt_discrete[i] = 0.5
 
@@ -136,6 +141,11 @@ def sptype_to_index(
         spt_check = ["O", "B", "A", "F", "G", "K", "M", "L", "T", "Y"]
 
         for i, item in enumerate(spec_types):
+            if isinstance(item, bytes):
+                # Catch SpT names that were read from FITS files
+                # and stored as bytes in the HDF5 database
+                item = item.decode("utf-8")
+
             if item[0] == "O":
                 spt_discrete[i] = 0.5
 
@@ -333,6 +343,38 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         index = param.index("fsed_1")
         param[index] = r"$f_\mathrm{sed,2}$"
 
+    if "vsini" in param:
+        index = param.index("vsini")
+        param[index] = r"$v\,\sin\,i$ (km s$^{-1}$)"
+
+    if "vsini_0" in param:
+        index = param.index("vsini_0")
+        param[index] = r"$v\,\sin\,i_\mathrm{1}$ (km s$^{-1}$)"
+
+    if "vsini_1" in param:
+        index = param.index("vsini_1")
+        param[index] = r"$v\,\sin\,i_\mathrm{2}$ (km s$^{-1}$)"
+
+    if "rad_vel" in param:
+        index = param.index("rad_vel")
+        param[index] = r"$v_\mathrm{r}$ (km s$^{-1}$)"
+
+    if "rad_vel_0" in param:
+        index = param.index("rad_vel_0")
+        param[index] = r"$v_\mathrm{r,1}$ (km s$^{-1}$)"
+
+    if "rad_vel_1" in param:
+        index = param.index("rad_vel_1")
+        param[index] = r"$v_\mathrm{r,2}$ (km s$^{-1}$)"
+
+    if "log_lum_0" in param:
+        index = param.index("log_lum_0")
+        param[index] = r"$\log\,L_\mathrm{1}/L_\mathrm{\odot}$"
+
+    if "log_lum_1" in param:
+        index = param.index("log_lum_1")
+        param[index] = r"$\log\,L_\mathrm{2}/L_\mathrm{\odot}$"
+
     if "f_clouds" in param:
         index = param.index("f_clouds")
         param[index] = r"$w_\mathrm{clouds}$"
@@ -344,7 +386,7 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     if "radius" in param:
         index = param.index("radius")
         if object_type == "planet":
-            param[index] = r"$R$ ($R_\mathrm{J}$)"
+            param[index] = r"$R_\mathrm{p}$ ($R_\mathrm{J}$)"
         elif object_type == "star":
             param[index] = r"$R_\ast$ ($R_\mathrm{\odot}$)"
 
@@ -363,14 +405,6 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     if "parallax_1" in param:
         index = param.index("parallax_1")
         param[index] = r"$\varpi_\mathrm{2}$ (mas)"
-
-    if "vsini" in param:
-        index = param.index("vsini")
-        param[index] = r"$v\,\sin\,i$ (km s$^{-1}$)"
-
-    if "rad_vel" in param:
-        index = param.index("rad_vel")
-        param[index] = r"RV (km s$^{-1}$)"
 
     if "mass" in param:
         index = param.index("mass")
@@ -420,6 +454,10 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
             param[index] = r"$\log\,M_\mathrm{2}/M_\mathrm{J}$"
         elif object_type == "star":
             param[index] = r"$\log\,M_\mathrm{2}/M_\mathrm{\odot}$"
+
+    if "mass_ratio" in param:
+        index = param.index("mass_ratio")
+        param[index] = r"$q$"
 
     if "age" in param:
         index = param.index("age")
@@ -526,6 +564,24 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         elif object_type == "star":
             param[index] = r"$L_\mathrm{disk}/L_\ast$"
 
+    if "log_lum" in param:
+        index = param.index("log_lum")
+        if object_type == "planet":
+            param[index] = r"$\log\,L/L_\mathrm{\odot}$"
+        elif object_type == "star":
+            param[index] = r"$\log\,L_\ast/L_\mathrm{\odot}$"
+
+    if "log_lum_atm" in param:
+        index = param.index("log_lum_atm")
+        if object_type == "planet":
+            param[index] = r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$"
+        elif object_type == "star":
+            param[index] = r"$\log\,L_\ast/L_\mathrm{\odot}$"
+
+    if "log_lum_disk" in param:
+        index = param.index("log_lum_disk")
+        param[index] = r"$\log\,L_\mathrm{disk}/L_\mathrm{\odot}$"
+
     if "lognorm_radius" in param:
         index = param.index("lognorm_radius")
         param[index] = r"$\log\,r_\mathrm{g}$"
@@ -568,6 +624,22 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
 
     if "ism_red" in param:
         index = param.index("ism_red")
+        param[index] = r"$R_V$"
+
+    if "ext_av" in param:
+        index = param.index("ext_av")
+        param[index] = r"$A_V$"
+
+    if "ext_av_0" in param:
+        index = param.index("ext_av_0")
+        param[index] = r"$A_{V,\mathrm{1}}$"
+
+    if "ext_av_1" in param:
+        index = param.index("ext_av_1")
+        param[index] = r"$A_{V,\mathrm{2}}$"
+
+    if "ext_rv" in param:
+        index = param.index("ext_rv")
         param[index] = r"$R_V$"
 
     for item in param:
@@ -625,24 +697,34 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         index = param.index("kzz")
         param[index] = r"$\log\,K_\mathrm{zz}$"
 
-    for i, item in enumerate(cloud_species):
-        if f"{item.lower()}_fraction" in param:
-            index = param.index(f"{item.lower()}_fraction")
-            param[index] = (
-                rf"$\log\,\tilde{{\mathrm{{X}}}}_\mathrm{{{cloud_labels[i]}}}$"
-            )
+    if "log_co_iso" in param:
+        index = param.index("log_co_iso")
+        param[index] = r"$\log\,^{12}\mathrm{CO}/^{13}\mathrm{CO}$"
 
-        if f"{item.lower()}_tau" in param:
-            index = param.index(f"{item.lower()}_tau")
-            param[index] = rf"$\bar{{\tau}}_\mathrm{{{cloud_labels[i]}}}$"
+        print(cloud_species)
 
-        if f"log_p_base_{item}(c)" in param:
-            index = param.index(f"log_p_base_{item}(c)")
-            param[index] = rf"$\log\,P_\mathrm{{{cloud_labels[i]}}}$"
+    for item in param:
+        from petitRADTRANS.chemistry.utils import simplify_species_list
 
-        if f"fsed_{item}(c)" in param:
-            index = param.index(f"fsed_{item}(c)")
-            param[index] = rf"fsed$_\mathrm{{{cloud_labels[i]}}}$"
+        if item[-9:] == "_fraction":
+            index = param.index(item)
+            cloud_simple = simplify_species_list([item[:-9]])[0]
+            param[index] = rf"$\log\,\tilde{{\mathrm{{X}}}}_\mathrm{{{cloud_simple}}}$"
+
+        if item[-4:] == "_tau":
+            index = param.index(item)
+            cloud_simple = simplify_species_list([item[:-4]])[0]
+            param[index] = rf"$\bar{{\tau}}_\mathrm{{{cloud_simple}}}$"
+
+        if item[:11] == "log_p_base_":
+            index = param.index(item)
+            cloud_simple = simplify_species_list([item[11:-3]])[0]
+            param[index] = rf"$\log\,P_\mathrm{{{cloud_simple}}}$"
+
+        if item[:5] == "fsed_":
+            index = param.index(item)
+            cloud_simple = simplify_species_list([item[5:-3]])[0]
+            param[index] = rf"fsed$_\mathrm{{{cloud_simple}}}$"
 
     for i, item_i in enumerate(cloud_species):
         for j, item_j in enumerate(cloud_species):
@@ -664,25 +746,37 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
             item_name = item[8:]
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
+            if item_name.find("/") > 0:
+                item_name = item_name[item_name.find("/") + 1 :]
             param[i] = rf"$a_\mathrm{{{item_name}}}$"
 
         elif item[0:6] == "error_":
             item_name = item[6:]
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
+            if item_name.find("/") > 0:
+                item_name = item_name[item_name.find("/") + 1 :]
             param[i] = rf"$b_\mathrm{{{item_name}}}$"
+
+        elif item[0:10] == "log_error_":
+            item_name = item[10:]
+            if item_name.find("\\_") == -1 and item_name.find("_") > 0:
+                item_name = item_name.replace("_", "\\_")
+            if item_name.find("/") > 0:
+                item_name = item_name[item_name.find("/") + 1 :]
+            param[i] = rf"$\log\,b_\mathrm{{{item_name}}}$"
 
         elif item[0:7] == "radvel_":
             item_name = item[7:]
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
-            param[i] = rf"RV$_\mathrm{{{item_name}}}$ (km s$^{{-1}}$)"
+            param[i] = rf"$v_\mathrm{{r,{item_name}}}$ (km s$^{{-1}}$)"
 
         elif item[0:8] == "rad_vel_":
             item_name = item[8:]
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
-            param[i] = rf"RV$_\mathrm{{{item_name}}}$ (km s$^{{-1}}$)"
+            param[i] = rf"$v_\mathrm{{r,{item_name}}}$ (km s$^{{-1}}$)"
 
         elif item[0:6] == "vsini_":
             item_name = item[6:]
@@ -696,11 +790,21 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
                 item_name = item_name.replace("_", "\\_")
             param[i] = rf"$c_\mathrm{{{item_name}}}$ (nm)"
 
-        elif item[-6:] == "_error":
-            item_name = item[:-6]
+        elif item[:6] == "error_":
+            item_name = item[6:]
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
-            param[i] = rf"$f_\mathrm{{{item_name}}}$"
+            if item_name.find("/") > 0:
+                item_name = item_name[item_name.find("/") + 1 :]
+            param[i] = rf"$b_\mathrm{{{item_name}}}$"
+
+        elif item[:10] == "log_error_":
+            item_name = item[10:]
+            if item_name.find("\\_") == -1 and item_name.find("_") > 0:
+                item_name = item_name.replace("_", "\\_")
+            if item_name.find("/") > 0:
+                item_name = item_name[item_name.find("/") + 1 :]
+            param[i] = rf"$\log\,b_\mathrm{{{item_name}}}$"
 
         elif item[0:9] == "corr_len_":
             item_name = item[9:]
@@ -896,11 +1000,11 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
 
     if "line_eq_width" in param:
         index = param.index("line_eq_width")
-        param[index] = r"EW ($\AA$)"
+        param[index] = r"EW ($\mathrm{\AA}$)"
 
     if "line_vrad" in param:
         index = param.index("line_vrad")
-        param[index] = r"RV (km s$^{-1}$)"
+        param[index] = r"$v_\mathrm{r}$ (km s$^{-1}$)"
 
     if "log_kappa_0" in param:
         index = param.index("log_kappa_0")
@@ -1057,12 +1161,17 @@ def quantity_unit(
             unit.append(None)
             label.append(r"$\gamma_\mathrm{ad}$")
 
+        elif item == "log_co_iso":
+            quantity.append("log_co_iso")
+            unit.append(None)
+            label.append(r"$\log\,^{12}\mathrm{CO}/^{13}\mathrm{CO}$")
+
         elif item == "radius":
             quantity.append("radius")
 
             if object_type == "planet":
                 unit.append(r"$R_\mathrm{J}$")
-                label.append(r"$R$")
+                label.append(r"$R_\mathrm{p}$")
 
             elif object_type == "star":
                 unit.append(r"$R_\mathrm{\odot}$")
@@ -1101,6 +1210,16 @@ def quantity_unit(
                     unit.append(r"$R_\mathrm{\odot}$")
 
                 label.append(rf"$R_\mathrm{{{param_index+1}}}$")
+
+            elif item[:7] == "ism_ext":
+                quantity.append(f"ism_ext_{param_index}")
+                unit.append(None)
+                label.append(r"$A_{V,}$" + rf"$_\mathrm{{{param_index+1}}}$")
+
+            elif item[:6] == "ext_av":
+                quantity.append(f"ext_av_{param_index}")
+                unit.append(None)
+                label.append(r"$A_{V,}$" + rf"$_\mathrm{{{param_index+1}}}$")
 
             elif item_split[0] == "disk" and item_split[1] == "teff":
                 quantity.append(f"disk_teff_{param_index}")
@@ -1141,11 +1260,49 @@ def quantity_unit(
 
         elif item == "luminosity":
             quantity.append("luminosity")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L_\ast/L_\mathrm{\odot}$")
+
+        elif item == "log_lum":
+            quantity.append("log_lum")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L/L_\mathrm{\odot}$")
+
+        elif item == "log_lum_atm":
+            quantity.append("log_lum_atm")
+
+            if object_type == "planet":
+                unit.append(None)
+                label.append(r"$\log\,L_\mathrm{p}/L_\mathrm{\odot}$")
+
+            elif object_type == "star":
+                unit.append(None)
+                label.append(r"$\log\,L_\ast/L_\mathrm{\odot}$")
+
+        elif item == "log_lum_disk":
+            quantity.append("log_lum_disk")
             unit.append(None)
-            label.append(r"$\log\,L/L_\mathrm{\odot}$")
+            label.append(r"$\log\,L_\mathrm{disk}/L_\mathrm{\odot}$")
 
         elif item == "ism_ext":
             quantity.append("ism_ext")
+            unit.append(None)
+            label.append(r"$A_V$")
+
+        elif item == "ext_av":
+            quantity.append("ext_av")
             unit.append(None)
             label.append(r"$A_V$")
 
@@ -1205,6 +1362,16 @@ def quantity_unit(
             quantity.append("flux_offset")
             unit.append(r"W m$^{-2}$ µm$^{-1}$")
             label.append(r"$b_\mathrm{flux}$")
+
+        elif item == "rad_vel":
+            quantity.append("rad_vel")
+            unit.append(r"km s$^{-1}$")
+            label.append(r"$v_\mathrm{r}$")
+
+        elif item == "vsini":
+            quantity.append("vsini")
+            unit.append(r"km s$^{-1}$")
+            label.append(r"$v\,\sin\,i$")
 
     return quantity, unit, label
 
@@ -1503,6 +1670,12 @@ def create_model_label(
 
     not_default = ["distance", "parallax", "mass", "luminosity"]
 
+    # Do not include log_lum because log_lum_atm is already include
+    # except when the model spectrum is a blackbody from ReadPlanck
+
+    if model_name != "planck":
+        not_default.append("log_lum")
+
     # Use the model parameters if leg_param is empty
 
     if len(leg_param) == 0:
@@ -1564,6 +1737,12 @@ def create_model_label(
         elif param_item[:4] == "fsed":
             value = f"{model_param[param_item]:{param_fmt['fsed']}}"
 
+        elif param_item[:7] == "ism_ext":
+            value = f"{model_param[param_item]:{param_fmt['ism_ext']}}"
+
+        elif param_item[:6] == "ext_av":
+            value = f"{model_param[param_item]:{param_fmt['ext_av']}}"
+
         elif param_item[:6] == "radius":
             if object_type == "planet":
                 value = f"{model_param[param_item]:{param_fmt['radius']}}"
@@ -1577,25 +1756,34 @@ def create_model_label(
                 radius_au = model_param[param_item] * constants.R_JUP / constants.AU
                 value = f"{radius_au:{param_fmt['disk_radius']}}"
 
-        elif param_item == "mass" and param_item in leg_param:
+        elif param_item == "mass":
             if object_type == "planet":
                 value = f"{model_param[param_item]:{param_fmt['mass']}}"
             elif object_type == "star":
                 value = f"{model_param[param_item]*constants.M_JUP/constants.M_SUN:{param_fmt['mass']}}"
 
-        elif param_item == "luminosity" and param_item in leg_param:
+        elif param_item == "luminosity":
             value = f"{np.log10(model_param[param_item]):{param_fmt['luminosity']}}"
 
-        elif param_item in leg_param and param_item in param_fmt:
+        elif param_item == "log_lum":
+            value = f"{model_param[param_item]:{param_fmt['log_lum']}}"
+
+        elif param_item == "log_lum_atm":
+            value = f"{model_param[param_item]:{param_fmt['log_lum_atm']}}"
+
+        elif param_item == "log_lum_disk":
+            value = f"{model_param[param_item]:{param_fmt['log_lum_disk']}}"
+
+        elif param_item in param_fmt:
             value = f"{model_param[param_item]:{param_fmt[param_item]}}"
 
-        elif param_item in leg_param and param_item not in param_fmt:
+        elif param_item not in param_fmt:
             warnings.warn(
-                f"The '{param_item}' parameter is not found in "
-                "the dictionary of 'param_fmt'."
+                f"The '{param_item}' parameter is not "
+                "found in the dictionary of 'param_fmt'."
             )
 
-            value = f"{model_param[param_item]:{param_fmt[param_item]:.2f}}"
+            value = f"{model_param[param_item]:.2f}"
 
         else:
             continue
@@ -1656,20 +1844,32 @@ def create_param_format(param_fmt: Optional[Dict[str, str]]) -> Dict[str, str]:
         "metallicity",
         "fsed",
         "log_kzz",
+        "log_co_iso",
         "distance",
         "parallax",
         "mass",
         "ism_ext",
+        "ext_av",
         "lognorm_ext",
         "powerlaw_ext",
         "log_flux_scaling",
+        "rad_vel",
+        "vsini",
     ]
 
     for param_item in param_add:
         if param_item not in param_fmt:
             param_fmt[param_item] = ".1f"
 
-    param_add = ["co", "c_o_ratio", "ad_index", "luminosity"]
+    param_add = [
+        "co",
+        "c_o_ratio",
+        "ad_index",
+        "luminosity",
+        "log_lum",
+        "log_lum_atm",
+        "log_lum_disk",
+    ]
 
     for param_item in param_add:
         if param_item not in param_fmt:

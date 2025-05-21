@@ -3,7 +3,7 @@
 Installation
 ============
 
-``species`` is compatible with `Python <https://www.python.org>`_ versions 3.9/3.10/3.11 and is available in the `PyPI repository <https://pypi.org/project/species/>`_ and on `Github <https://github.com/tomasstolker/species>`_.
+``species`` is compatible with `Python <https://www.python.org>`_ versions 3.10/3.11/3.12 and is available in the `PyPI repository <https://pypi.org/project/species/>`_ and on `Github <https://github.com/tomasstolker/species>`_.
 
 It is recommended to install ``species`` within a `virtual environment <https://docs.python.org/3/tutorial/venv.html>`_ such that the required dependency versions will not cause any conflicts with other installed packages. 
 
@@ -40,16 +40,23 @@ Installation from Github
 Using pip
 ^^^^^^^^^
 
-The repository on `Github <https://github.com/tomasstolker/species>`_ contains the latest implementations and can also be installed with `pip <https://packaging.python.org/tutorials/installing-packages/>`_:
+The repository on `Github <https://github.com/tomasstolker/species>`_ contains the latest implementations and can also be installed with `pip <https://packaging.python.org/tutorials/installing-packages/>`_, including the minimum of required dependencies:
 
 .. code-block:: console
 
     $ pip install git+https://github.com/tomasstolker/species.git
 
+Or, to include all dependencies, therefore enabling all functionalities of ``species``:
+
+.. code-block:: console
+
+    $ pip install species[full] @ git+https://github.com/tomasstolker/species.git
+
+
 Cloning the repository
 ^^^^^^^^^^^^^^^^^^^^^^
 
-In case you want to look into the code, it is best to clone the repository:
+In case you want to look into and make changes to the code, it is best to clone the repository:
 
 .. code-block:: console
 
@@ -60,6 +67,12 @@ Next, the package is installed by running ``pip`` in the local repository folder
 .. code-block:: console
 
     $ pip install -e .
+
+Or, to install with all dependencies:
+
+.. code-block:: console
+
+    $ pip install ".[full]"
 
 New commits can be pulled from Github once a local copy of the repository exists:
 

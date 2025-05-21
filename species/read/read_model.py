@@ -2,19 +2,21 @@
 Module with reading functionalities for atmospheric model spectra.
 """
 
-import os
 import warnings
 
 from configparser import ConfigParser
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import dust_extinction.parameter_averages as dust_ext
 import h5py
 import numpy as np
 
-from PyAstronomy.pyasl import rotBroad, fastRotBroad
+from astropy import units as u
 from typeguard import typechecked
 from scipy.integrate import simpson
 from scipy.interpolate import interp1d, RegularGridInterpolator
+from spectres.spectral_resampling_numba import spectres_numba
 
 from species.core import constants
 from species.core.box import (
@@ -31,13 +33,26 @@ from species.read.read_filter import ReadFilter
 from species.read.read_planck import ReadPlanck
 from species.util.convert_util import logg_to_mass
 from species.util.dust_util import check_dust_database, ism_extinction, convert_to_av
-from species.util.model_util import binary_to_single
+from species.util.model_util import binary_to_single, check_nearest_spec, rot_int_cmj
 from species.util.spec_util import smooth_spectrum
 
 
 class ReadModel:
     """
     Class for reading a model spectrum from the database.
+    Extinction is applied by adding the ``ext_model`` parameter
+    to the ``model_param`` dictionary of any of the ``ReadModel``
+    methods. The value of ``ext_model`` should be the name of
+    any of the extinction models from the ``dust-extinction``
+    package (see `list of available models <https://
+    dust-extinction.readthedocs.io/en/latest/dust_extinction/
+    choose_model.html>`_). For example, set the value to
+    ``'G23'`` to use the extinction relation from `Gordon et al.
+    (2023) <https://ui.adsabs.harvard.edu/abs/2023ApJ...950...86G>`_.
+    When setting the ``ext_model``, the ``ext_av`` should be included
+    in ``model_param`` to specify the visual extinction,
+    :math:`A_V`, and optionally ``ext_rv``, to specify the
+    reddening, :math:`R_V`.
     """
 
     @typechecked
@@ -91,7 +106,7 @@ class ReadModel:
         else:
             self.mean_wavelength = None
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        config_file = Path.cwd() / "species_config.ini"
 
         config = ConfigParser()
         config.read(config_file)
@@ -104,12 +119,17 @@ class ReadModel:
             "distance",
             "parallax",
             "mass",
-            "luminosity",
+            "log_lum",
+            "log_lum_atm",
+            "log_lum_disk",
             "lognorm_radius",
             "lognorm_sigma",
             "lognorm_ext",
             "ism_ext",
             "ism_red",
+            "ext_model",
+            "ext_av",
+            "ext_rv",
             "powerlaw_max",
             "powerlaw_exp",
             "powerlaw_ext",
@@ -187,16 +207,25 @@ class ReadModel:
             wl_index = np.ones(wl_points.shape[0], dtype=bool)
 
         else:
-            wl_index = (wl_points > self.wavel_range[0]) & (
-                wl_points < self.wavel_range[1]
+            wl_index = (wl_points >= self.wavel_range[0]) & (
+                wl_points <= self.wavel_range[1]
             )
             index = np.where(wl_index)[0]
 
-            if index[0] - 1 >= 0:
-                wl_index[index[0] - 1] = True
+            # Add extra wavelength points at the boundary to make
+            # sure that the wavelength range of a filter profile
+            # is fully included by the model spectrum.
 
-            if index[-1] + 1 < wl_index.size:
-                wl_index[index[-1] + 1] = True
+            # Adding 1 wavelength at both boundaries is not
+            # sufficient because of the way that spectres
+            # treats the edges with the resampling.
+
+            for i in range(1, 20):
+                if index[0] - i >= 0:
+                    wl_index[index[0] - i] = True
+
+                if index[-1] + i < wl_index.size:
+                    wl_index[index[-1] + i] = True
 
         return wl_points[wl_index], wl_index
 
@@ -233,6 +262,20 @@ class ReadModel:
                 grid_points["teff"] <= teff_range[1]
             )
 
+            # Add extra Teff points at the boundary to make sure
+            # sure that the Teff prior of a fit is fully included
+            # in the Teff range that is interpolated
+
+            first_teff = np.where(teff_select)[0][0]
+
+            if first_teff - 1 >= 0:
+                teff_select[first_teff - 1] = True
+
+            last_teff = np.where(teff_select)[0][-1]
+
+            if last_teff + 1 < teff_select.size:
+                teff_select[last_teff + 1] = True
+
             grid_points["teff"] = grid_points["teff"][teff_select]
 
         else:
@@ -261,7 +304,7 @@ class ReadModel:
             grid_points,
             grid_flux,
             method="linear",
-            bounds_error=False,
+            bounds_error=True,
             fill_value=np.nan,
         )
 
@@ -362,8 +405,10 @@ class ReadModel:
 
                 cross_tmp = cross_interp(filt_trans[:, 0])
 
-                integral1 = np.trapz(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-                integral2 = np.trapz(filt_trans[:, 1], x=filt_trans[:, 0])
+                integral1 = np.trapezoid(
+                    filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0]
+                )
+                integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
 
                 cross_phot[i, j] = integral1 / integral2
 
@@ -490,8 +535,10 @@ class ReadModel:
 
                 cross_tmp = cross_interp(filt_trans[:, 0])
 
-                integral1 = np.trapz(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-                integral2 = np.trapz(filt_trans[:, 1], x=filt_trans[:, 0])
+                integral1 = np.trapezoid(
+                    filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0]
+                )
+                integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
 
                 cross_phot[i, j] = integral1 / integral2
 
@@ -524,7 +571,7 @@ class ReadModel:
     @typechecked
     def apply_ext_ism(
         wavelengths: np.ndarray, flux: np.ndarray, v_band_ext: float, v_band_red: float
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> np.ndarray:
         """
         Internal function for applying ISM extinction to a spectrum.
 
@@ -541,13 +588,11 @@ class ReadModel:
         -------
         np.ndarray
             Fluxes (W m-2 um-1) with the extinction applied.
-        np.ndarray
-            Extinction (mag) as function of wavelength.
         """
 
         ext_mag = ism_extinction(v_band_ext, v_band_red, wavelengths)
 
-        return flux * 10.0 ** (-0.4 * ext_mag), ext_mag
+        return flux * 10.0 ** (-0.4 * ext_mag)
 
     @typechecked
     def get_model(
@@ -556,7 +601,6 @@ class ReadModel:
         spec_res: Optional[float] = None,
         wavel_resample: Optional[np.ndarray] = None,
         magnitude: bool = False,
-        fast_rot_broad: bool = True,
         ext_filter: Optional[str] = None,
         **kwargs,
     ) -> ModelBox:
@@ -578,21 +622,13 @@ class ReadModel:
             argument is set to ``None``.
         wavel_resample : np.ndarray, None
             Wavelength points (um) to which the spectrum is resampled.
-            Optional smoothin with ``spec_res`` is applied for
+            Optional smoothing with ``spec_res`` is applied for
             resampling with ``wavel_resample``. The wavelength points
             as stored in the database are used if the argument is set
             to ``None``.
         magnitude : bool
             Normalize the spectrum with a flux calibrated spectrum of
             Vega and return the magnitude instead of flux density.
-        fast_rot_broad : bool
-            Apply fast algorithm for the rotational broadening if set
-            to ``True``, otherwise a slow but more accurate broadening
-            is applied if set to ``False``. The fast algorithm will
-            only provide an accurate broadening if the wavelength range
-            of the spectrum is somewhat narrow (e.g. only the :math:`K`
-            band). The argument is only used if the ``vsini`` parameter
-            is included in the ``model_param`` dictionary.
         ext_filter : str, None
             Filter that is associated with the (optional) extinction
             parameter, ``ism_ext``. When the argument of ``ext_filter``
@@ -620,6 +656,10 @@ class ReadModel:
 
             if not kwargs["smooth"] and spec_res is not None:
                 spec_res = None
+
+        # Check nearest grid points
+
+        check_nearest_spec(self.model, model_param)
 
         # Get grid boundaries
 
@@ -692,6 +732,7 @@ class ReadModel:
             "fsed",
             "log_kzz",
             "ad_index",
+            "log_co_iso",
         ]
 
         parameters = []
@@ -783,10 +824,14 @@ class ReadModel:
 
             planck_box = readplanck.get_spectrum(disk_param, spec_res=spec_res)
 
-            flux_interp = interp1d(
-                planck_box.wavelength, planck_box.flux, bounds_error=False
+            flux += spectres_numba(
+                self.wl_points,
+                planck_box.wavelength,
+                planck_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=True,
             )
-            flux += flux_interp(self.wl_points)
 
         elif n_disk > 1:
             readplanck = ReadPlanck(
@@ -807,10 +852,14 @@ class ReadModel:
 
                 planck_box = readplanck.get_spectrum(disk_param, spec_res=spec_res)
 
-                flux_interp = interp1d(
-                    planck_box.wavelength, planck_box.flux, bounds_error=False
+                flux += spectres_numba(
+                    self.wl_points,
+                    planck_box.wavelength,
+                    planck_box.flux,
+                    spec_errs=None,
+                    fill=np.nan,
+                    verbose=True,
                 )
-                flux += flux_interp(self.wl_points)
 
         # Create ModelBox with the spectrum
 
@@ -827,36 +876,12 @@ class ReadModel:
         # Apply rotational broadening vsin(i) in km/s
 
         if "vsini" in model_param:
-            spec_interp = interp1d(
-                model_box.wavelength, model_box.flux, bounds_error=False
+            model_box.flux = rot_int_cmj(
+                wavel=model_box.wavelength,
+                flux=model_box.flux,
+                vsini=model_param["vsini"],
+                eps=0.0,
             )
-
-            wavel_new = np.linspace(
-                model_box.wavelength[0],
-                model_box.wavelength[-1],
-                2 * model_box.wavelength.size,
-            )
-
-            if fast_rot_broad:
-                flux_broad = fastRotBroad(
-                    wvl=wavel_new,
-                    flux=spec_interp(wavel_new),
-                    epsilon=0.0,
-                    vsini=model_param["vsini"],
-                    effWvl=None,
-                )
-
-            else:
-                flux_broad = rotBroad(
-                    wvl=wavel_new,
-                    flux=spec_interp(wavel_new),
-                    epsilon=0.0,
-                    vsini=model_param["vsini"],
-                    edgeHandling="firstlast",
-                )
-
-            spec_interp = interp1d(wavel_new, flux_broad, bounds_error=False)
-            model_box.flux = spec_interp(model_box.wavelength)
 
         # Apply veiling
 
@@ -914,17 +939,80 @@ class ReadModel:
             else:
                 ism_ext_av = model_param["ism_ext"]
 
-            model_box.flux, ext_mag = self.apply_ext_ism(
+            model_box.flux = self.apply_ext_ism(
                 model_box.wavelength,
                 model_box.flux,
                 ism_ext_av,
                 ism_reddening,
             )
 
-            idx_select = ext_mag >= 0.0
+        if "ext_av" in model_param:
+            if "ext_model" in model_param:
+                ext_model = getattr(dust_ext, model_param["ext_model"])()
 
-            model_box.wavelength = model_box.wavelength[idx_select]
-            model_box.flux = model_box.flux[idx_select]
+                if "ext_rv" in model_param:
+                    ext_model.Rv = model_param["ext_rv"]
+
+                # Wavelength range (um) for which the extinction is defined
+                ext_wavel = (1.0 / ext_model.x_range[1], 1.0 / ext_model.x_range[0])
+
+                if (
+                    model_box.wavelength[0] < ext_wavel[0]
+                    or model_box.wavelength[-1] > ext_wavel[1]
+                ):
+                    warnings.warn(
+                        "The wavelength range of the model spectrum "
+                        f"({model_box.wavelength[0]:.3f}-"
+                        f"{model_box.wavelength[-1]:.3f} um) "
+                        "does not fully lie within the available "
+                        "wavelength range of the extinction model "
+                        f"({ext_wavel[0]:.3f}-{ext_wavel[1]:.3f} um). "
+                        "The extinction will therefore not be applied "
+                        "to fluxes of which the wavelength lies "
+                        "outside the range of the extinction model."
+                    )
+
+                wavel_select = (model_box.wavelength > ext_wavel[0]) & (
+                    model_box.wavelength < ext_wavel[1]
+                )
+
+                model_box.flux[wavel_select] *= ext_model.extinguish(
+                    model_box.wavelength[wavel_select] * u.micron,
+                    Av=model_param["ext_av"],
+                )
+
+            else:
+                warnings.warn(
+                    "The 'ext_av' parameter is included in the "
+                    "'model_param' dictionary but the 'ext_model' "
+                    "parameter is missing. Therefore, the 'ext_av' "
+                    "parameter is ignored and no extinction is "
+                    "applied to the spectrum."
+                )
+
+        # Apply radial velocity shift to the wavelengths
+
+        if "rad_vel" in model_param:
+            # Wavelength shift in um
+            # rad_vel in km s-1 and constants.LIGHT in m s-1
+
+            wavel_shift = (
+                model_box.wavelength * 1e3 * model_param["rad_vel"] / constants.LIGHT
+            )
+
+            # Resampling will introduce a few NaNs at the edge of the
+            # flux array. Resampling is needed because shifting the
+            # wavelength array does not work when combining two spectra
+            # of a binary system of which the two stars have different RVs.
+
+            model_box.flux = spectres_numba(
+                model_box.wavelength,
+                model_box.wavelength + wavel_shift,
+                model_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=False,
+            )
 
         # Smooth the spectrum
 
@@ -936,80 +1024,44 @@ class ReadModel:
         # Resample the spectrum
 
         if wavel_resample is not None:
-            flux_interp = interp1d(
-                model_box.wavelength, model_box.flux, bounds_error=False
+            model_box.flux = spectres_numba(
+                wavel_resample,
+                model_box.wavelength,
+                model_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=True,
             )
-            model_box.flux = flux_interp(wavel_resample)
-
-            # model_box.flux = spectres.spectres(
-            #     wavel_resample,
-            #     model_box.wavelength,
-            #     model_box.flux,
-            #     spec_errs=None,
-            #     fill=np.nan,
-            #     verbose=True,
-            # )
 
             model_box.wavelength = wavel_resample
-
-        # elif spec_res is not None and not smooth:
-        #     index = np.where(np.isnan(model_box.flux))[0]
-        #
-        #     if index.size > 0:
-        #         raise ValueError(
-        #             "Flux values should not contains NaNs. Please make sure that "
-        #             "the parameter values and the wavelength range are within "
-        #             "the grid boundaries as stored in the database."
-        #         )
-        #
-        #     wavel_resample = create_wavelengths(
-        #         (self.wl_points[0], self.wl_points[-1]), spec_res
-        #     )
-        #
-        #     indices = np.where(
-        #         (wavel_resample > self.wl_points[0])
-        #         & (wavel_resample < self.wl_points[-2])
-        #     )[0]
-        #
-        #     wavel_resample = wavel_resample[indices]
-        #
-        #     flux_interp = interp1d(
-        #         model_box.wavelength, model_box.flux, bounds_error=False
-        #     )
-        #     model_box.flux = flux_interp(wavel_resample)
-        #
-        #     # model_box.flux = spectres.spectres(
-        #     #     wavel_resample,
-        #     #     model_box.wavelength,
-        #     #     model_box.flux,
-        #     #     spec_errs=None,
-        #     #     fill=np.nan,
-        #     #     verbose=True,
-        #     # )
-        #
-        #     model_box.wavelength = wavel_resample
 
         # Convert flux to magnitude
 
         if magnitude:
-            with h5py.File(self.database, "a") as hdf5_file:
-                if "spectra/calibration/vega" not in hdf5_file:
+            with h5py.File(self.database, "r") as hdf5_file:
+                # Check if the Vega spectrum is found in
+                # 'r' mode because the 'a' mode is not
+                # possible when using multiprocessing
+                if "spectra/calibration/vega" in hdf5_file:
+                    vega_found = True
+                else:
+                    vega_found = False
+
+            if not vega_found:
+                with h5py.File(self.database, "a") as hdf5_file:
                     add_vega(self.data_folder, hdf5_file)
 
+            with h5py.File(self.database, "r") as hdf5_file:
                 vega_spec = np.array(hdf5_file["spectra/calibration/vega"])
 
-            flux_interp = interp1d(vega_spec[0,], vega_spec[1,])
-
-            flux_vega = flux_interp(model_box.wavelength)
-
-            # flux_vega, _ = spectres.spectres(
-            #     model_box.wavelength,
-            #     calib_box.wavelength,
-            #     calib_box.flux,
-            #     spec_errs=calib_box.error,
-            #     fill=np.nan,
-            #     verbose=True,
-            # )
+            flux_vega = spectres_numba(
+                model_box.wavelength,
+                vega_spec[0,],
+                vega_spec[1,],
+                spec_errs=None,
+                fill=np.nan,
+                verbose=True,
+            )
 
             model_box.flux = -2.5 * np.log10(model_box.flux / flux_vega)
             model_box.quantity = "magnitude"
@@ -1028,8 +1080,10 @@ class ReadModel:
 
         # Add the luminosity to the parameter dictionary
 
+        lum_total = 0.0
+
         if "radius" in model_box.parameters:
-            model_box.parameters["luminosity"] = (
+            lum_atm = (
                 4.0
                 * np.pi
                 * (model_box.parameters["radius"] * constants.R_JUP) ** 2
@@ -1038,10 +1092,13 @@ class ReadModel:
                 / constants.L_SUN
             )  # (Lsun)
 
+            lum_total += lum_atm
+            model_box.parameters["log_lum_atm"] = np.log10(lum_atm)
+
         # Add the blackbody disk components to the luminosity
 
         if n_disk == 1:
-            model_box.parameters["luminosity"] += (
+            lum_disk = (
                 4.0
                 * np.pi
                 * (model_box.parameters["disk_radius"] * constants.R_JUP) ** 2
@@ -1050,9 +1107,12 @@ class ReadModel:
                 / constants.L_SUN
             )  # (Lsun)
 
+            lum_total += lum_disk
+            model_box.parameters["log_lum_disk"] = np.log10(lum_disk)
+
         elif n_disk > 1:
             for disk_idx in range(n_disk):
-                model_box.parameters["luminosity"] += (
+                lum_disk = (
                     4.0
                     * np.pi
                     * (
@@ -1064,6 +1124,12 @@ class ReadModel:
                     * model_box.parameters[f"disk_teff_{disk_idx}"] ** 4.0
                     / constants.L_SUN
                 )  # (Lsun)
+
+                lum_total += lum_disk
+                model_box.parameters[f"log_lum_disk_{disk_idx}"] = np.log10(lum_disk)
+
+        if lum_total > 0.0:
+            model_box.parameters["log_lum"] = np.log10(lum_total)
 
         # Add the planet mass to the parameter dictionary
 
@@ -1162,6 +1228,7 @@ class ReadModel:
             "fsed",
             "log_kzz",
             "ad_index",
+            "log_co_iso",
         ]
 
         # Create lists with the parameter names and values
@@ -1273,10 +1340,14 @@ class ReadModel:
 
             planck_box = readplanck.get_spectrum(disk_param, spec_res=spec_res)
 
-            flux_interp = interp1d(
-                planck_box.wavelength, planck_box.flux, bounds_error=False
+            flux += spectres_numba(
+                self.wl_points,
+                planck_box.wavelength,
+                planck_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=True,
             )
-            flux += flux_interp(self.wl_points)
 
         elif n_disk > 1:
             readplanck = ReadPlanck(
@@ -1297,10 +1368,14 @@ class ReadModel:
 
                 planck_box = readplanck.get_spectrum(disk_param, spec_res=spec_res)
 
-                flux_interp = interp1d(
-                    planck_box.wavelength, planck_box.flux, bounds_error=False
+                flux += spectres_numba(
+                    self.wl_points,
+                    planck_box.wavelength,
+                    planck_box.flux,
+                    spec_errs=None,
+                    fill=np.nan,
+                    verbose=True,
                 )
-                flux += flux_interp(self.wl_points)
 
         # Create ModelBox with the spectrum
 
@@ -1313,6 +1388,31 @@ class ReadModel:
             quantity="flux",
             spec_res=spec_res,
         )
+
+        # Apply rotational broadening vsin(i) in km/s
+
+        if "vsini" in model_param:
+            model_box.flux = rot_int_cmj(
+                wavel=model_box.wavelength,
+                flux=model_box.flux,
+                vsini=model_param["vsini"],
+                eps=0.0,
+            )
+
+        # Apply veiling
+
+        if (
+            "veil_a" in model_param
+            and "veil_b" in model_param
+            and "veil_ref" in model_param
+        ):
+            lambda_ref = 0.5  # (um)
+
+            veil_flux = model_param["veil_ref"] + model_param["veil_b"] * (
+                model_box.wavelength - lambda_ref
+            )
+
+            model_box.flux = model_param["veil_a"] * model_box.flux + veil_flux
 
         # Apply extinction
 
@@ -1355,16 +1455,80 @@ class ReadModel:
             else:
                 ism_ext_av = model_param["ism_ext"]
 
-            model_box.flux, ext_mag = self.apply_ext_ism(
+            model_box.flux = self.apply_ext_ism(
                 model_box.wavelength,
                 model_box.flux,
                 ism_ext_av,
                 ism_reddening,
             )
 
-            idx_select = ext_mag >= 0.0
-            model_box.wavelength = model_box.wavelength[idx_select]
-            model_box.flux = model_box.flux[idx_select]
+        if "ext_av" in model_param:
+            if "ext_model" in model_param:
+                ext_model = getattr(dust_ext, model_param["ext_model"])()
+
+                if "ext_rv" in model_param:
+                    ext_model.Rv = model_param["ext_rv"]
+
+                # Wavelength range (um) for which the extinction is defined
+                ext_wavel = (1.0 / ext_model.x_range[1], 1.0 / ext_model.x_range[0])
+
+                if (
+                    model_box.wavelength[0] < ext_wavel[0]
+                    or model_box.wavelength[-1] > ext_wavel[1]
+                ):
+                    warnings.warn(
+                        "The wavelength range of the model spectrum "
+                        f"({model_box.wavelength[0]:.3f}-"
+                        f"{model_box.wavelength[-1]:.3f} um) "
+                        "does not fully lie within the available "
+                        "wavelength range of the extinction model "
+                        f"({ext_wavel[0]:.3f}-{ext_wavel[1]:.3f} um). "
+                        "The extinction will therefore not be applied "
+                        "to fluxes of which the wavelength lies "
+                        "outside the range of the extinction model."
+                    )
+
+                wavel_select = (model_box.wavelength > ext_wavel[0]) & (
+                    model_box.wavelength < ext_wavel[1]
+                )
+
+                model_box.flux[wavel_select] *= ext_model.extinguish(
+                    model_box.wavelength[wavel_select] * u.micron,
+                    Av=model_param["ext_av"],
+                )
+
+            else:
+                warnings.warn(
+                    "The 'ext_av' parameter is included in the "
+                    "'model_param' dictionary but the 'ext_model' "
+                    "parameter is missing. Therefore, the 'ext_av' "
+                    "parameter is ignored and no extinction is "
+                    "applied to the spectrum."
+                )
+
+        # Apply radial velocity shift to the wavelengths
+
+        if "rad_vel" in model_param:
+            # Wavelength shift in um
+            # rad_vel in km s-1 and constants.LIGHT in m s-1
+
+            wavel_shift = (
+                model_box.wavelength * 1e3 * model_param["rad_vel"] / constants.LIGHT
+            )
+
+            # Resampling will introduce a few NaNs at the edge of the
+            # flux array. Resampling is needed because shifting the
+            # wavelength array does not work when combining two spectra
+            # of a binary system of which the two stars have different RVs.
+
+            model_box.flux = spectres_numba(
+                model_box.wavelength,
+                model_box.wavelength + wavel_shift,
+                model_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=False,
+            )
 
         # Smooth the spectrum
 
@@ -1376,33 +1540,23 @@ class ReadModel:
         # Resample the spectrum
 
         if wavel_resample is not None:
-            flux_interp = interp1d(
-                model_box.wavelength, model_box.flux, bounds_error=False
+            model_box.flux = spectres_numba(
+                wavel_resample,
+                model_box.wavelength,
+                model_box.flux,
+                spec_errs=None,
+                fill=np.nan,
+                verbose=True,
             )
-            model_box.flux = flux_interp(wavel_resample)
-
-            # model_box.flux = spectres.spectres(
-            #     wavel_resample,
-            #     model_box.wavelength,
-            #     model_box.flux,
-            #     spec_errs=None,
-            #     fill=np.nan,
-            #     verbose=True,
-            # )
 
             model_box.wavelength = wavel_resample
 
-        # Add the planet mass to the parameter dictionary
-
-        if "radius" in model_param and "logg" in model_param:
-            model_param["mass"] = logg_to_mass(
-                model_param["logg"], model_param["radius"]
-            )
-
         # Add the luminosity to the parameter dictionary
 
+        lum_total = 0.0
+
         if "radius" in model_box.parameters:
-            model_box.parameters["luminosity"] = (
+            lum_atm = (
                 4.0
                 * np.pi
                 * (model_box.parameters["radius"] * constants.R_JUP) ** 2
@@ -1411,10 +1565,13 @@ class ReadModel:
                 / constants.L_SUN
             )  # (Lsun)
 
+            lum_total += lum_atm
+            model_box.parameters["log_lum_atm"] = np.log10(lum_atm)
+
         # Add the blackbody disk components to the luminosity
 
         if n_disk == 1:
-            model_box.parameters["luminosity"] += (
+            lum_disk = (
                 4.0
                 * np.pi
                 * (model_box.parameters["disk_radius"] * constants.R_JUP) ** 2
@@ -1423,9 +1580,12 @@ class ReadModel:
                 / constants.L_SUN
             )  # (Lsun)
 
+            lum_total += lum_disk
+            model_box.parameters["log_lum_disk"] = np.log10(lum_disk)
+
         elif n_disk > 1:
             for disk_idx in range(n_disk):
-                model_box.parameters["luminosity"] += (
+                lum_disk = (
                     4.0
                     * np.pi
                     * (
@@ -1437,6 +1597,19 @@ class ReadModel:
                     * model_box.parameters["disk_teff"] ** 4.0
                     / constants.L_SUN
                 )  # (Lsun)
+
+                lum_total += lum_disk
+                model_box.parameters[f"log_lum_disk_{disk_idx}"] = np.log10(lum_disk)
+
+        if lum_total > 0.0:
+            model_box.parameters["log_lum"] = np.log10(lum_total)
+
+        # Add the planet mass to the parameter dictionary
+
+        if "radius" in model_param and "logg" in model_param:
+            model_param["mass"] = logg_to_mass(
+                model_param["logg"], model_param["radius"]
+            )
 
         return model_box
 
@@ -1745,7 +1918,7 @@ class ReadModel:
         ``model_param`` dictionary should contain the parameters
         for both components (e.g. ``teff_0`` and ``teff_1``, instead
         of ``teff``). Apart from that, the same parameters are used
-        as with :meth:`~species.read.read_model.ReadModel.get_model`.
+        as with :func:`~species.read.read_model.ReadModel.get_model`.
 
         Parameters
         ----------
@@ -1827,14 +2000,21 @@ class ReadModel:
         return model_box
 
     @typechecked
-    def integrate_spectrum(self, model_param: Dict[str, float]) -> float:
+    def integrate_spectrum(
+        self, model_param: Dict[str, float]
+    ) -> Tuple[float, Optional[float]]:
         """
         Function for calculating the bolometric flux by integrating
-        a model spectrum at the requested parameters. In principle,
-        the calculated luminosity should be approximately the same
-        as the value that can be calculated directly from the
-        :math:`T_\\mathrm{eff}` and radius parameters, unless the
-        atmospheric model had not properly converged.
+        a model spectrum at the requested parameters. Therefore, when
+        extinction is applied to the spectrum, the luminosity is the
+        extinct luminosity and not the intrinsic luminosity. Without
+        applying extinction, the integrated luminosity should in
+        principle be the same as the luminosity calculated directly
+        from the :math:`T_\\mathrm{eff}` and radius parameters, unless
+        the radiative-convective model had not fully converged for a
+        particular set of input parameters. It can thus be useful
+        to check if the integrated luminosity is indeed consistent
+        with the :math:`T_\\mathrm{eff}` of the model.
 
         Parameters
         ----------
@@ -1848,16 +2028,14 @@ class ReadModel:
         Returns
         -------
         float
+            Effective temperature (K) calculated with the
+            Stefan–Boltzmann law from the integrated flux.
+        float, None
             Bolometric luminosity (:math:`\\log{(L/L_\\odot)}`).
+            The returned value is set to ``None`` in case
+            the ``model_param`` dictionary does not contain
+            the radius parameter.
         """
-
-        if "radius" not in model_param:
-            raise ValueError(
-                "Please include the 'radius' parameter "
-                "in the 'model_param' dictionary, "
-                "which is require for calculating the "
-                "bolometric luminosity."
-            )
 
         wavel_points = self.get_wavelengths()
 
@@ -1869,29 +2047,41 @@ class ReadModel:
             or self.wavel_range[1] != wavel_points[-1]
         ):
             warnings.warn(
-                "The 'wavel_range' is not set to the "
-                "maximum available range. To maximize the "
-                "accuracy when calculating the bolometric "
-                "luminosity, it is recommended to set "
-                "'wavel_range=None'."
+                "The 'wavel_range' is not set to the maximum "
+                "available range. To maximize the accuracy when "
+                "calculating the bolometric luminosity, it is "
+                "recommended to set 'wavel_range=None'."
             )
 
-        if "parallax" in model_param:
-            del model_param["parallax"]
+        param_copy = model_param.copy()
 
-        if "distance" in model_param:
-            del model_param["distance"]
+        if "parallax" in param_copy:
+            del param_copy["parallax"]
 
-        model_box = self.get_model(model_param)
+        if "distance" in param_copy:
+            del param_copy["distance"]
 
-        bol_lum = (
-            4.0
-            * np.pi
-            * (model_param["radius"] * constants.R_JUP) ** 2
-            * simpson(y=model_box.flux, x=model_box.wavelength)
-        )
+        model_box = self.get_model(param_copy)
 
-        return np.log10(bol_lum / constants.L_SUN)
+        flux_int = simpson(y=model_box.flux, x=model_box.wavelength)
+
+        if "radius" in param_copy:
+            bol_lum = (
+                4.0 * np.pi * (param_copy["radius"] * constants.R_JUP) ** 2 * flux_int
+            )
+            log_lum = np.log10(bol_lum / constants.L_SUN)
+        else:
+            log_lum = None
+
+            warnings.warn(
+                "Please include the 'radius' parameter in the "
+                "'model_param' dictionary, if the bolometric "
+                "luminosity should be calculated."
+            )
+
+        teff_int = (flux_int / constants.SIGMA_SB) ** 0.25
+
+        return teff_int, log_lum
 
     @typechecked
     def create_color_magnitude(
@@ -2066,7 +2256,6 @@ class ReadModel:
     #     with self.open_database() as hdf5_file:
     #         wl_points = np.array(hdf5_file[f"models/{self.model}/wavelength"])
     #         grid_flux = np.array(hdf5_file[f"models/{self.model}/flux"])
-    #     print(grid_flux.shape)
     #
     #     import matplotlib.pyplot as plt
     #
@@ -2095,7 +2284,6 @@ class ReadModel:
     #         # Create list with grid points
     #
     #         grid_points = list(grid_points.values())
-    #         print(grid_points)
     #
     #         # Get the boolean array for selecting the fluxes
     #         # within the requested wavelength range

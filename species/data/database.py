@@ -4,7 +4,6 @@ Module with functionalities for reading and writing of data.
 
 import json
 import os
-import sys
 import warnings
 
 from configparser import ConfigParser
@@ -19,7 +18,7 @@ import pooch
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.units.quantity import Quantity
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from tqdm.auto import tqdm
 from typeguard import typechecked
 
@@ -377,18 +376,22 @@ class Database:
             if parallax is None:
                 parallax = tuple(comp_data[item]["parallax"])
 
-            app_mag = comp_data[item]["app_mag"]
+            if "app_mag" in comp_data[item]:
+                app_mag = comp_data[item]["app_mag"]
 
-            for key, value in app_mag.items():
-                if isinstance(value[0], list):
-                    mag_list = []
-                    for mag_item in value:
-                        mag_list.append(tuple(mag_item))
+                for key, value in app_mag.items():
+                    if isinstance(value[0], list):
+                        mag_list = []
+                        for mag_item in value:
+                            mag_list.append(tuple(mag_item))
 
-                    app_mag[key] = mag_list
+                        app_mag[key] = mag_list
 
-                else:
-                    app_mag[key] = tuple(value)
+                    else:
+                        app_mag[key] = tuple(value)
+
+            else:
+                app_mag = None
 
             self.add_object(
                 object_name=item,
@@ -549,7 +552,7 @@ class Database:
     @typechecked
     def add_isochrones(
         self,
-        model: str,
+        model: Optional[str] = None,
         filename: Optional[str] = None,
         tag: Optional[str] = None,
     ) -> None:
@@ -558,25 +561,28 @@ class Database:
 
         Parameters
         ----------
-        model : str
+        model : str, None
             Evolutionary model ('ames', 'atmo', 'baraffe2015',
-            'bt-settl', 'linder2019', 'nextgen', 'saumon2008',
-            'sonora', or 'manual'). Isochrones will be
-            automatically downloaded. Alternatively,
-            isochrone data can be downloaded from
-            https://phoenix.ens-lyon.fr/Grids/ or
-            https://perso.ens-lyon.fr/isabelle.baraffe/, and can
-            be manually added by setting the ``filename`` and
-            ``tag`` arguments, and setting ``model='manual'``.
+            'bt-settl', 'linder2019', 'nextgen', 'parsec',
+            'saumon2008', 'sonora-bobcat', 'sonora-diamondback').
+            Isochrones will be automatically downloaded.
+            Alternatively, the ``filename`` parameter can be used
+            in combination with ``tag``.
         filename : str, None
-            Filename with the isochrone data. Setting the argument
-            is only required when ``model='manual'``. Otherwise,
-            the argument can be set to ``None``.
+            Filename with the isochrone data. The argument of
+            ``model`` will be ignored by setting the argument
+            of ``filename``. When using ``filename``, also
+            the argument of ``tag`` should be set. Only files
+            with isochrone data from
+            https://phoenix.ens-lyon.fr/Grids/ and
+            https://perso.ens-lyon.fr/isabelle.baraffe/ are
+            supported. The parameter is ignored by setting
+            the argument to ``None``.
         tag : str, None
             Database tag name where the isochrone that will be
-            stored. Setting the argument is only required when
-            ``model='manual'``. Otherwise, the argument can be
-            set to ``None``.
+            stored. Setting the argument is only required in
+            combination with the ``filename`` parameter.
+            Otherwise, the argument can be set to ``None``.
 
         Returns
         -------
@@ -592,23 +598,28 @@ class Database:
         print(f"File name: {filename}")
         print(f"Database tag: {tag}")
 
-        if model == "phoenix":
-            warnings.warn(
-                "Please set model='manual' instead of "
-                "model='phoenix' when using the filename "
-                "parameter for adding isochrone data.",
-                DeprecationWarning,
+        avail_models = [
+            "ames",
+            "atmo",
+            "baraffe2015",
+            "bt-settl",
+            "linder2019",
+            "nextgen",
+            "parsec",
+            "saumon2008",
+            "sonora-bobcat",
+            "sonora-diamondback",
+        ]
+
+        if filename is None and model not in avail_models:
+            raise ValueError(
+                f"The selected 'model={model}' is not supported. Please "
+                f"select one of the following models: {avail_models}"
             )
 
         with h5py.File(self.database, "a") as hdf5_file:
-            if "isochrones" not in hdf5_file:
-                hdf5_file.create_group("isochrones")
 
-            if model in ["manual", "marleau", "phoenix"]:
-                if f"isochrones/{tag}" in hdf5_file:
-                    del hdf5_file[f"isochrones/{tag}"]
-
-            elif model == "ames":
+            if model == "ames":
                 if "isochrones/ames-cond" in hdf5_file:
                     del hdf5_file["isochrones/ames-cond"]
                 if "isochrones/ames-dusty" in hdf5_file:
@@ -640,6 +651,10 @@ class Database:
                 if "isochrones/nextgen" in hdf5_file:
                     del hdf5_file["isochrones/nextgen"]
 
+            elif model == "parsec":
+                if "isochrones/parsec" in hdf5_file:
+                    del hdf5_file["isochrones/parsec"]
+
             elif model == "saumon2008":
                 if "isochrones/saumon2008-nc_solar" in hdf5_file:
                     del hdf5_file["isochrones/saumon2008-nc_solar"]
@@ -652,13 +667,34 @@ class Database:
                 if "isochrones/saumon2008-hybrid_solar" in hdf5_file:
                     del hdf5_file["isochrones/saumon2008-hybrid_solar"]
 
-            elif model == "sonora":
-                if "isochrones/sonora+0.0" in hdf5_file:
-                    del hdf5_file["isochrones/sonora+0.0"]
-                if "isochrones/sonora+0.5" in hdf5_file:
-                    del hdf5_file["isochrones/sonora+0.5"]
-                if "isochrones/sonora-0.5" in hdf5_file:
-                    del hdf5_file["isochrones/sonora-0.5"]
+            elif model == "sonora-bobcat":
+                if "isochrones/sonora-bobcat+0.0" in hdf5_file:
+                    del hdf5_file["isochrones/sonora-bobcat+0.0"]
+                if "isochrones/sonora-bobcat+0.5" in hdf5_file:
+                    del hdf5_file["isochrones/sonora-bobcat+0.5"]
+                if "isochrones/sonora-bobcat-0.5" in hdf5_file:
+                    del hdf5_file["isochrones/sonora-bobcat-0.5"]
+
+            elif model == "sonora-diamondback":
+                iso_tags = [
+                    "nc-0.5",
+                    "nc+0.0",
+                    "nc+0.5",
+                    "hybrid-0.5",
+                    "hybrid+0.0",
+                    "hybrid+0.5",
+                    "hybrid-grav-0.5",
+                    "hybrid-grav+0.0",
+                    "hybrid-grav+0.5",
+                ]
+
+                for iso_item in iso_tags:
+                    if f"isochrones/sonora-diamondback-{iso_item}" in hdf5_file:
+                        del hdf5_file[f"isochrones/sonora-diamondback-{iso_item}"]
+
+            else:
+                if f"isochrones/{tag}" in hdf5_file:
+                    del hdf5_file[f"isochrones/{tag}"]
 
             add_isochrone_grid(
                 self.data_folder, hdf5_file, model, filename=filename, tag=tag
@@ -672,6 +708,8 @@ class Database:
         wavel_sampling: Optional[float] = None,
         teff_range: Optional[Tuple[float, float]] = None,
         unpack_tar: bool = True,
+        fit_from: Optional[float] = None,
+        extend_from: Optional[float] = None,
     ) -> None:
         """
         Function for adding a grid of model spectra to the database.
@@ -687,7 +725,11 @@ class Database:
         the input grid was sufficient for modeling the spectra at
         the considered wavelength regime. See also
         :func:`~species.data.database.Database.add_custom_model`
-        for adding a custom grid to the database.
+        for adding a custom grid to the database. Most grids
+        provide spectra up to the near- or mid-infrared regime.
+        To extend the spectra towards longer wavelengths, it is
+        possible to use the ``fit_from`` and ``extend_from``
+        parameters to extend the spectra with a Rayleigh-Jeans slope.
 
         Parameters
         ----------
@@ -726,6 +768,22 @@ class Database:
             argument can be set to ``False`` such that the
             unpacking will be skipped. This can save some time
             with unpacking large TAR files.
+        fit_from : float, None
+            Extend the spectra with a Rayleigh-Jeans slope. To do so,
+            the red end of the spectra will be fitted by setting
+            ``fit_from`` to the minimum wavelength (in um) beyond
+            which fluxes will be included in the least-squares fit.
+            The spectra are not extended when setting the
+            argument to ``None``.
+        extend_from : float, None
+            This parameter can be used in combination with
+            ``fit_from``. The argument of ``extend_from`` is the
+            minimum wavelength (in um) from which the spectra
+            will be extended with the Rayleigh-Jeans slope.
+            The spectra will be extended from the last available
+            wavelength when setting the argument to ``None``.
+            Typically, the value of ``fit_from`` will be smaller
+            than the value of ``extend_from``.
 
         Returns
         -------
@@ -744,6 +802,8 @@ class Database:
                 teff_range=teff_range,
                 wavel_sampling=wavel_sampling,
                 unpack_tar=unpack_tar,
+                fit_from=fit_from,
+                extend_from=extend_from,
             )
 
     @typechecked
@@ -790,10 +850,12 @@ class Database:
             are supported: ``teff`` (for :math:`T_\\mathrm{eff}`),
             ``logg`` (for :math:`\\log\\,g`), ``feh`` (for [Fe/H]),
             ``co`` (for C/O), ``fsed`` (for :math:`f_\\mathrm{sed}`),
-            ``logkzz`` (for :math:`\\log\\,K_\\mathrm{zz}`), and
-            ``adindex`` (for :math:`\\gamma_\\mathrm{ad}`). Please
-            contact the code maintainer if support for other
-            parameters should be added.
+            ``logkzz`` (for :math:`\\log\\,K_\\mathrm{zz}`),
+            ``adindex`` (for :math:`\\gamma_\\mathrm{ad}`), and
+            ``log_co_iso`` (for
+            :math:`\\log\\,^{12}\\mathrm{CO}/^{13}\\mathrm{CO}`).
+            Please contact the code maintainer if support for
+            other parameters should be added.
         wavel_range : tuple(float, float), None
             Wavelength range (:math:`\\mu\\text{m}`) that will be
             stored in the database. The full wavelength range is used
@@ -928,7 +990,7 @@ class Database:
         units : dict, None
             Dictionary with the units of the data provided with
             ``flux_density`` and ``spectrum``. Only required if
-            the wavelength units are not :math:`\\mu\\text{m}^{-1}`
+            the wavelength units are not :math:`\\mu\\text{m}`
             and/or the flux units are not provided as
             :math:`\\text{W} \\text{m}^{-2} \\mu\\text{m}^{-1}`.
             Otherwise, the argument of ``units`` can be set to
@@ -1073,7 +1135,7 @@ class Database:
                     except KeyError:
                         warnings.warn(
                             f"Filter '{mag_item}' is not available on the SVO Filter "
-                            f"Profile Service so a flux calibration can not be done. "
+                            f"Profile Service so a flux calibration cannot be done. "
                             f"Please add the filter manually with the 'add_filter' "
                             f"function. For now, only the '{mag_item}' magnitude of "
                             f"'{object_name}' is stored."
@@ -1101,7 +1163,7 @@ class Database:
                         except KeyError:
                             warnings.warn(
                                 f"Filter '{mag_item}' is not available on the SVO "
-                                f"Filter Profile Service so a flux calibration can not "
+                                f"Filter Profile Service so a flux calibration cannot "
                                 f"be done. Please add the filter manually with the "
                                 f"'add_filter' function. For now, only the "
                                 f"'{mag_item}' magnitude of '{object_name}' is "
@@ -1303,12 +1365,24 @@ class Database:
                                     print("   - GRAVITY spectrum:")
                                     print(f"      - Object: {gravity_object}")
 
-                                wavelength = hdulist[1].data["WAVELENGTH"]  # (um)
-                                flux = hdulist[1].data["FLUX"]  # (W m-2 um-1)
-                                covariance = hdulist[1].data[
-                                    "COVARIANCE"
-                                ]  # (W m-2 um-1)^2
-                                error = np.sqrt(np.diag(covariance))  # (W m-2 um-1)
+                                # Wavelength (um)
+                                wavelength = hdulist[1].data["WAVELENGTH"].byteswap()
+                                wavelength = wavelength.view(
+                                    wavelength.dtype.newbyteorder("=")
+                                )
+
+                                # Flux (W m-2 um-1)
+                                flux = hdulist[1].data["FLUX"].byteswap()
+                                flux = flux.view(flux.dtype.newbyteorder("="))
+
+                                # Covariance (W m-2 um-1)^2
+                                covariance = hdulist[1].data["COVARIANCE"].byteswap()
+                                covariance = covariance.view(
+                                    covariance.dtype.newbyteorder("=")
+                                )
+
+                                # Uncorrelated uncertainties (W m-2 um-1)
+                                error = np.sqrt(np.diag(covariance))
 
                                 read_spec[spec_item] = np.column_stack(
                                     [wavelength, flux, error]
@@ -1320,7 +1394,8 @@ class Database:
                                     print("   - Spectrum:")
 
                                 for i, hdu_item in enumerate(hdulist):
-                                    data = np.asarray(hdu_item.data)
+                                    data = hdu_item.data.byteswap()
+                                    data = data.view(data.dtype.newbyteorder("="))
 
                                     if (
                                         data.ndim == 2
@@ -1342,7 +1417,7 @@ class Database:
 
                                 if spec_item not in read_spec:
                                     raise ValueError(
-                                        f"The spectrum data from {spec_value[0]} can not "
+                                        f"The spectrum data from {spec_value[0]} cannot "
                                         f"be read. The data format should be 2D with "
                                         f"3 columns."
                                     )
@@ -1353,14 +1428,14 @@ class Database:
 
                         except UnicodeDecodeError:
                             raise ValueError(
-                                f"The spectrum data from {spec_value[0]} can not "
+                                f"The spectrum data from {spec_value[0]} cannot "
                                 "be read. Please provide a FITS or ASCII file."
                             )
 
                         if data.ndim != 2 or 3 not in data.shape:
                             raise ValueError(
                                 f"The spectrum data from {spec_value[0]} "
-                                "can not be read. The data format "
+                                "cannot be read. The data format "
                                 "should be 2D with 3 columns."
                             )
 
@@ -1470,9 +1545,13 @@ class Database:
                                     print("   - GRAVITY covariance matrix:")
                                     print(f"      - Object: {gravity_object}")
 
-                                read_cov[spec_item] = hdulist[1].data[
-                                    "COVARIANCE"
-                                ]  # (W m-2 um-1)^2
+                                # (W m-2 um-1)^2
+                                read_cov[spec_item] = (
+                                    hdulist[1].data["COVARIANCE"].byteswap()
+                                )
+                                read_cov[spec_item] = read_cov[spec_item].view(
+                                    read_cov[spec_item].dtype.newbyteorder("=")
+                                )
 
                             else:
                                 if spec_item in units:
@@ -1490,7 +1569,8 @@ class Database:
                                     print("   - Covariance matrix:")
 
                                 for i, hdu_item in enumerate(hdulist):
-                                    data = np.asarray(hdu_item.data)
+                                    data = hdu_item.data.byteswap()
+                                    data = data.view(data.dtype.newbyteorder("="))
 
                                     corr_warn = (
                                         f"The matrix from {spec_value[1]} contains "
@@ -1526,7 +1606,7 @@ class Database:
 
                                 if spec_item not in read_cov:
                                     raise ValueError(
-                                        f"The covariance matrix from {spec_value[1]} can not "
+                                        f"The covariance matrix from {spec_value[1]} cannot "
                                         f"be read. The data format should be 2D with the "
                                         f"same number of wavelength points as the "
                                         f"spectrum."
@@ -1538,14 +1618,14 @@ class Database:
                         except UnicodeDecodeError:
                             raise ValueError(
                                 f"The covariance matrix from {spec_value[1]} "
-                                f"can not be read. Please provide a "
+                                f"cannot be read. Please provide a "
                                 f"FITS or ASCII file."
                             )
 
                         if data.ndim != 2 or data.shape[0] != data.shape[1]:
                             raise ValueError(
                                 f"The covariance matrix from {spec_value[1]} "
-                                f"can not be read. The data format "
+                                f"cannot be read. The data format "
                                 f"should be 2D with the same number of "
                                 f"wavelength points as the spectrum."
                             )
@@ -1609,7 +1689,7 @@ class Database:
                 if spec_value[2] is None:
                     if verbose:
                         print(f"      - {spec_item}: None")
-                    dset.attrs["specres"] = 0.0
+                    dset.attrs["specres"] = np.nan
 
                 else:
                     if verbose:
@@ -1916,7 +1996,7 @@ class Database:
         Parameters
         ----------
         phot_library : str
-            Photometric library ('vlm-plx' or 'leggett').
+            Photometric library ('vlm-plx', 'leggett', or 'beiler2024').
 
         Returns
         -------
@@ -1942,6 +2022,11 @@ class Database:
                 from species.data.phot_data.phot_leggett import add_leggett
 
                 add_leggett(self.data_folder, hdf5_file)
+
+            elif phot_library[0:10] == "beiler2024":
+                from species.data.phot_data.phot_jwst_ydwarfs import add_jwst_ydwarfs
+
+                add_jwst_ydwarfs(self.data_folder, hdf5_file)
 
     @typechecked
     def add_calibration(
@@ -2008,7 +2093,8 @@ class Database:
 
         if filename is not None:
             if filename[-5:] == ".fits":
-                data = fits.getdata(filename)
+                data = fits.getdata(filename).byteswap()
+                data = data.view(data.dtype.newbyteorder("="))
 
                 if data.ndim != 2:
                     raise RuntimeError(
@@ -2214,11 +2300,15 @@ class Database:
                 group_path = f"results/fit/{tag}/fixed_param/{key}"
                 hdf5_file.create_dataset(group_path, data=value)
 
-            if "spec_type" in attr_dict:
-                dset.attrs["type"] = attr_dict["spec_type"]
+            if "model_type" in attr_dict:
+                dset.attrs["model_type"] = attr_dict["model_type"]
+            elif "spec_type" in attr_dict:
+                dset.attrs["model_type"] = attr_dict["spec_type"]
 
-            if "spec_name" in attr_dict:
-                dset.attrs["spectrum"] = attr_dict["spec_name"]
+            if "model_name" in attr_dict:
+                dset.attrs["model_name"] = attr_dict["model_name"]
+            elif "spec_name" in attr_dict:
+                dset.attrs["model_name"] = attr_dict["spec_name"]
 
             dset.attrs["n_param"] = int(len(modelpar))
             dset.attrs["sampler"] = str(sampler)
@@ -2235,8 +2325,10 @@ class Database:
                 ln_evidence = attr_dict["ln_evidence"]
                 dset.attrs["ln_evidence"] = ln_evidence[0]
                 dset.attrs["ln_evidence_error"] = ln_evidence[1]
+
                 print(
-                    f"Ln(Z): {float(ln_evidence[0]):.2f} +/- {float(ln_evidence[1]):.2f}"
+                    f"ln(Z) = {float(ln_evidence[0]):.2f} "
+                    f"+/- {float(ln_evidence[1]):.2f}"
                 )
 
             count_scaling = 0
@@ -2271,7 +2363,6 @@ class Database:
     def get_probable_sample(
         self,
         tag: str,
-        burnin: Optional[int] = None,
         verbose: bool = True,
     ) -> Dict[str, float]:
         """
@@ -2282,83 +2373,80 @@ class Database:
         ----------
         tag : str
             Database tag with the posterior results.
-        burnin : int, None
-            Number of burnin steps to remove. No burnin is
-            removed if the argument is set to ``None``. Is
-            only applied on posterior distributions that
-            have been sampled with ``emcee``.
         verbose : bool
             Print output, including the parameter values.
 
         Returns
         -------
         dict
-            Parameters and values for the sample with the
-            maximum likelihood.
+            Parameters of the sample with the maximum likelihood.
         """
+
+        from species.util.model_util import binary_to_single, check_nearest_spec
 
         if verbose:
             print_section("Get sample with the maximum likelihood")
             print(f"Database tag: {tag}")
 
-        if burnin is None:
-            burnin = 0
-
         with h5py.File(self.database, "r") as hdf5_file:
             dset = hdf5_file[f"results/fit/{tag}/samples"]
+            dset_attrs = dict(dset.attrs)
 
             samples = np.asarray(dset)
             ln_prob = np.asarray(hdf5_file[f"results/fit/{tag}/ln_prob"])
 
-            if "n_param" in dset.attrs:
-                n_param = dset.attrs["n_param"]
-            else:
-                n_param = dset.attrs["nparam"]
+        if "n_param" in dset_attrs:
+            n_param = dset_attrs["n_param"]
+        else:
+            n_param = dset_attrs["nparam"]
 
-            if samples.ndim == 3:
-                if burnin > samples.shape[0]:
-                    raise ValueError(
-                        f"The 'burnin' value is larger than the number of steps "
-                        f"({samples.shape[1]}) that are made by the walkers."
-                    )
+        index_max = np.argmax(ln_prob)
+        max_sample = samples[index_max,]
 
-                samples = samples[burnin:, :, :]
-                ln_prob = ln_prob[burnin:, :]
+        prob_sample = {}
 
-                samples = np.reshape(samples, (-1, n_param))
-                ln_prob = np.reshape(ln_prob, -1)
+        for i in range(n_param):
+            par_key = dset_attrs[f"parameter{i}"]
+            par_value = max_sample[i]
 
-            index_max = np.argmax(ln_prob)
-            max_sample = samples[index_max,]
+            prob_sample[par_key] = par_value
 
-            prob_sample = {}
+        if (
+            "parallax" not in prob_sample
+            and "parallax_0" not in prob_sample
+            and "parallax" in dset_attrs
+        ):
+            prob_sample["parallax"] = dset_attrs["parallax"]
 
-            for i in range(n_param):
-                par_key = dset.attrs[f"parameter{i}"]
-                par_value = max_sample[i]
+        elif "distance" not in prob_sample and "distance" in dset_attrs:
+            prob_sample["distance"] = dset_attrs["distance"]
 
-                prob_sample[par_key] = par_value
+        if "pt_smooth" in dset_attrs:
+            prob_sample["pt_smooth"] = dset_attrs["pt_smooth"]
 
-            if (
-                "parallax" not in prob_sample
-                and "parallax_0" not in prob_sample
-                and "parallax" in dset.attrs
-            ):
-                prob_sample["parallax"] = dset.attrs["parallax"]
-
-            elif "distance" not in prob_sample and "distance" in dset.attrs:
-                prob_sample["distance"] = dset.attrs["distance"]
-
-            if "pt_smooth" in dset.attrs:
-                prob_sample["pt_smooth"] = dset.attrs["pt_smooth"]
+        if "ext_model" in dset_attrs:
+            prob_sample["ext_model"] = dset_attrs["ext_model"]
 
         if verbose:
             print("\nParameters:")
-            for key, value in prob_sample.items():
-                if key in ["luminosity", "flux_scaling", "flux_offset"]:
-                    print(f"   - {key} = {value:.2e}")
-                else:
-                    print(f"   - {key} = {value:.2f}")
+            for param_key, param_value in prob_sample.items():
+                if isinstance(param_value, float):
+                    if -0.01 < param_value < 0.01:
+                        print(f"   - {param_key} = {param_value:.2e}")
+                    else:
+                        print(f"   - {param_key} = {param_value:.2f}")
+
+        if "model_type" in dset_attrs and dset_attrs["model_type"] == "atmosphere":
+
+            if "binary" in dset_attrs and dset_attrs["binary"]:
+                param_0 = binary_to_single(prob_sample, 0)
+                check_nearest_spec(dset_attrs["model_name"], param_0)
+
+                param_1 = binary_to_single(prob_sample, 1)
+                check_nearest_spec(dset_attrs["model_name"], param_1)
+
+            else:
+                check_nearest_spec(dset_attrs["model_name"], prob_sample)
 
         return prob_sample
 
@@ -2366,7 +2454,6 @@ class Database:
     def get_median_sample(
         self,
         tag: str,
-        burnin: Optional[int] = None,
         verbose: bool = True,
     ) -> Dict[str, float]:
         """
@@ -2377,11 +2464,6 @@ class Database:
         ----------
         tag : str
             Database tag with the posterior results.
-        burnin : int, None
-            Number of burnin steps to remove. No burnin is
-            removed if the argument is set to ``None``. Is
-            only applied on posterior distributions that
-            have been sampled with ``emcee``.
         verbose : bool
             Print output, including the parameter values.
 
@@ -2391,65 +2473,65 @@ class Database:
             Median parameter values of the posterior distribution.
         """
 
+        from species.util.model_util import binary_to_single, check_nearest_spec
+
         if verbose:
             print_section("Get median parameters")
             print(f"Database tag: {tag}")
 
-        if burnin is None:
-            burnin = 0
-
         with h5py.File(self.database, "r") as hdf5_file:
             dset = hdf5_file[f"results/fit/{tag}/samples"]
-
-            if "n_param" in dset.attrs:
-                n_param = dset.attrs["n_param"]
-            else:
-                n_param = dset.attrs["nparam"]
-
             samples = np.asarray(dset)
+            dset_attrs = dict(dset.attrs)
 
-            # samples = samples[samples[:, 2] > 100., ]
+        if "n_param" in dset_attrs:
+            n_param = dset_attrs["n_param"]
+        else:
+            n_param = dset_attrs["nparam"]
 
-            if samples.ndim == 3:
-                if burnin > samples.shape[0]:
-                    raise ValueError(
-                        "The 'burnin' value is larger than the "
-                        f"number of steps ({samples.shape[1]}) "
-                        "that are made by the walkers."
-                    )
+        median_sample = {}
 
-                if burnin is not None:
-                    samples = samples[burnin:, :, :]
+        for i in range(n_param):
+            par_key = dset_attrs[f"parameter{i}"]
+            par_value = np.median(samples[:, i])
+            median_sample[par_key] = par_value
 
-                samples = np.reshape(samples, (-1, n_param))
+        if (
+            "parallax" not in median_sample
+            and "parallax_0" not in median_sample
+            and "parallax" in dset_attrs
+        ):
+            median_sample["parallax"] = dset_attrs["parallax"]
 
-            median_sample = {}
+        elif "distance" not in median_sample and "distance" in dset_attrs:
+            median_sample["distance"] = dset_attrs["distance"]
 
-            for i in range(n_param):
-                par_key = dset.attrs[f"parameter{i}"]
-                par_value = np.median(samples[:, i])
-                median_sample[par_key] = par_value
+        if "pt_smooth" in dset_attrs:
+            median_sample["pt_smooth"] = dset_attrs["pt_smooth"]
 
-            if (
-                "parallax" not in median_sample
-                and "parallax_0" not in median_sample
-                and "parallax" in dset.attrs
-            ):
-                median_sample["parallax"] = dset.attrs["parallax"]
-
-            elif "distance" not in median_sample and "distance" in dset.attrs:
-                median_sample["distance"] = dset.attrs["distance"]
-
-            if "pt_smooth" in dset.attrs:
-                median_sample["pt_smooth"] = dset.attrs["pt_smooth"]
+        if "ext_model" in dset_attrs:
+            median_sample["ext_model"] = dset_attrs["ext_model"]
 
         if verbose:
             print("\nParameters:")
-            for key, value in median_sample.items():
-                if key in ["luminosity", "flux_scaling", "flux_offset"]:
-                    print(f"   - {key} = {value:.2e}")
-                else:
-                    print(f"   - {key} = {value:.2f}")
+            for param_key, param_value in median_sample.items():
+                if isinstance(param_value, float):
+                    if param_value < 0.01:
+                        print(f"   - {param_key} = {param_value:.2e}")
+                    else:
+                        print(f"   - {param_key} = {param_value:.2f}")
+
+        if "model_type" in dset_attrs and dset_attrs["model_type"] == "atmosphere":
+
+            if "binary" in dset_attrs and dset_attrs["binary"]:
+                param_0 = binary_to_single(median_sample, 0)
+                check_nearest_spec(dset_attrs["model_name"], param_0)
+
+                param_1 = binary_to_single(median_sample, 1)
+                check_nearest_spec(dset_attrs["model_name"], param_1)
+
+            else:
+                check_nearest_spec(dset_attrs["model_name"], median_sample)
 
         return median_sample
 
@@ -2486,38 +2568,37 @@ class Database:
             print_section("Get best comparison parameters")
             print(f"Database tag: {tag}")
 
-        with h5py.File(self.database, "a") as hdf5_file:
+        with h5py.File(self.database, "r") as hdf5_file:
             dset = hdf5_file[f"results/comparison/{tag}/goodness_of_fit"]
+            dset_attrs = dict(dset.attrs)
 
-            n_param = dset.attrs["n_param"]
-            n_scale_spec = dset.attrs["n_scale_spec"]
+        n_param = dset_attrs["n_param"]
+        n_scale_spec = dset_attrs["n_scale_spec"]
 
-            model_param = {}
+        model_param = {}
 
-            for i in range(n_param):
-                model_param[dset.attrs[f"parameter{i}"]] = dset.attrs[f"best_param{i}"]
+        for i in range(n_param):
+            model_param[dset_attrs[f"parameter{i}"]] = dset_attrs[f"best_param{i}"]
 
-            if "parallax" in dset.attrs:
-                model_param["parallax"] = dset.attrs["parallax"]
+        if "parallax" in dset_attrs:
+            model_param["parallax"] = dset_attrs["parallax"]
 
-            elif "distance" in dset.attrs:
-                model_param["distance"] = dset.attrs["distance"]
+        elif "distance" in dset_attrs:
+            model_param["distance"] = dset_attrs["distance"]
 
-            model_param["radius"] = dset.attrs["radius"]
+        model_param["radius"] = dset_attrs["radius"]
 
-            for i in range(n_scale_spec):
-                scale_spec = dset.attrs[f"scale_spec{i}"]
-                model_param[f"scaling_{scale_spec}"] = dset.attrs[
-                    f"scaling_{scale_spec}"
-                ]
+        for i in range(n_scale_spec):
+            scale_spec = dset_attrs[f"scale_spec{i}"]
+            model_param[f"scaling_{scale_spec}"] = dset_attrs[f"scaling_{scale_spec}"]
 
         if verbose:
             print("\nParameters:")
-            for key, value in model_param.items():
-                if key in ["luminosity", "flux_scaling", "flux_offset"]:
-                    print(f"   - {key} = {value:.2e}")
+            for param_key, param_value in model_param.items():
+                if param_value < 0.01:
+                    print(f"   - {param_key} = {param_value:.2e}")
                 else:
-                    print(f"   - {key} = {value:.2f}")
+                    print(f"   - {param_key} = {param_value:.2f}")
 
         return model_param
 
@@ -2525,8 +2606,7 @@ class Database:
     def get_mcmc_spectra(
         self,
         tag: str,
-        random: int,
-        burnin: Optional[int] = None,
+        random: Optional[int] = None,
         wavel_range: Optional[Union[Tuple[float, float], str]] = None,
         spec_res: Optional[float] = None,
         wavel_resample: Optional[np.ndarray] = None,
@@ -2535,20 +2615,16 @@ class Database:
         Tuple[List[ModelBox], List[ModelBox], List[ModelBox]],
     ]:
         """
-        Function for drawing random spectra from the
-        sampled posterior distributions.
+        Function for drawing random model spectra from the
+        sampled posterior distribution.
 
         Parameters
         ----------
         tag : str
             Database tag with the posterior samples.
-        random : int
-            Number of random samples.
-        burnin : int, None
-            Number of burnin steps to remove. No burnin is
-            removed if the argument is set to ``None``. Is
-            only applied on posterior distributions that
-            have been sampled with ``emcee``.
+        random : int, None
+            Number of random samples. All samples are selected
+            by setting the argument to ``None``.
         wavel_range : tuple(float, float), str, None
             Wavelength range (um) or filter name. Full spectrum is
             used if set to ``None``.
@@ -2580,122 +2656,111 @@ class Database:
         print_section(f"Get posterior spectra")
 
         print(f"Database tag: {tag}")
-        print(f"Number of samples: {random}")
         print(f"Wavelength range (um): {wavel_range}")
         print(f"Resolution: {spec_res}")
 
-        if burnin is None:
-            burnin = 0
+        with h5py.File(self.database, "r") as hdf5_file:
+            dset = hdf5_file[f"results/fit/{tag}/samples"]
+            samples = np.array(dset)
+            dset_attrs = dict(dset.attrs)
 
-        hdf5_file = h5py.File(self.database, "r")
-        dset = hdf5_file[f"results/fit/{tag}/samples"]
+        if "model_type" in dset_attrs:
+            model_type = dset_attrs["model_type"]
+        else:
+            model_type = dset_attrs["type"]
 
-        spectrum_type = dset.attrs["type"]
-        spectrum_name = dset.attrs["spectrum"]
+        if "model_name" in dset_attrs:
+            model_name = dset_attrs["model_name"]
+        else:
+            model_name = dset_attrs["spectrum"]
 
-        if "n_param" in dset.attrs:
-            n_param = dset.attrs["n_param"]
-        elif "nparam" in dset.attrs:
-            n_param = dset.attrs["nparam"]
+        if "n_param" in dset_attrs:
+            n_param = dset_attrs["n_param"]
+        elif "nparam" in dset_attrs:
+            n_param = dset_attrs["nparam"]
 
-        if "n_scaling" in dset.attrs:
-            n_scaling = dset.attrs["n_scaling"]
-        elif "nscaling" in dset.attrs:
-            n_scaling = dset.attrs["nscaling"]
+        if "n_scaling" in dset_attrs:
+            n_scaling = dset_attrs["n_scaling"]
+        elif "nscaling" in dset_attrs:
+            n_scaling = dset_attrs["nscaling"]
         else:
             n_scaling = 0
 
-        if "n_error" in dset.attrs:
-            n_error = dset.attrs["n_error"]
+        if "n_error" in dset_attrs:
+            n_error = dset_attrs["n_error"]
         else:
             n_error = 0
 
-        if "binary" in dset.attrs:
-            binary = dset.attrs["binary"]
+        if "binary" in dset_attrs:
+            binary = dset_attrs["binary"]
         else:
             binary = False
 
-        if "ext_filter" in dset.attrs:
-            ext_filter = dset.attrs["ext_filter"]
+        if "ext_filter" in dset_attrs:
+            ext_filter = dset_attrs["ext_filter"]
         else:
             ext_filter = None
 
         ignore_param = []
 
         for i in range(n_scaling):
-            ignore_param.append(dset.attrs[f"scaling{i}"])
+            ignore_param.append(dset_attrs[f"scaling{i}"])
 
         for i in range(n_error):
-            ignore_param.append(dset.attrs[f"error{i}"])
+            ignore_param.append(dset_attrs[f"error{i}"])
 
         for i in range(n_param):
-            if dset.attrs[f"parameter{i}"][:9] == "corr_len_":
-                ignore_param.append(dset.attrs[f"parameter{i}"])
+            if dset_attrs[f"parameter{i}"][:9] == "corr_len_":
+                ignore_param.append(dset_attrs[f"parameter{i}"])
 
-            elif dset.attrs[f"parameter{i}"][:9] == "corr_amp_":
-                ignore_param.append(dset.attrs[f"parameter{i}"])
+            elif dset_attrs[f"parameter{i}"][:9] == "corr_amp_":
+                ignore_param.append(dset_attrs[f"parameter{i}"])
 
-        if spec_res is not None and spectrum_type == "calibration":
+        if spec_res is not None and model_type == "calibration":
             warnings.warn(
                 "Smoothing of the spectral resolution is not "
                 "implemented for calibration spectra."
             )
 
-        if "parallax" in dset.attrs:
-            parallax = dset.attrs["parallax"]
+        if "parallax" in dset_attrs:
+            parallax = dset_attrs["parallax"]
         else:
             parallax = None
 
-        if "distance" in dset.attrs:
-            distance = dset.attrs["distance"]
+        if "distance" in dset_attrs:
+            distance = dset_attrs["distance"]
         else:
             distance = None
 
-        samples = np.asarray(dset)
-
-        # samples = samples[samples[:, 2] > 100., ]
-
-        if samples.ndim == 2:
-            rand_index = np.random.randint(samples.shape[0], size=random)
-            samples = samples[rand_index,]
-
-        elif samples.ndim == 3:
-            if burnin > samples.shape[0]:
-                raise ValueError(
-                    f"The 'burnin' value is larger than the number of steps "
-                    f"({samples.shape[1]}) that are made by the walkers."
-                )
-
-            samples = samples[burnin:, :, :]
-
-            ran_walker = np.random.randint(samples.shape[0], size=random)
-            ran_step = np.random.randint(samples.shape[1], size=random)
-            samples = samples[ran_walker, ran_step, :]
+        if random is None:
+            print(f"Number of samples: {samples.shape[0]}")
+        else:
+            print(f"Number of samples: {random}")
+            rng = np.random.default_rng()
+            samples = rng.choice(samples, random, replace=False, axis=0, shuffle=False)
 
         param = []
         for i in range(n_param):
-            param.append(dset.attrs[f"parameter{i}"])
+            param.append(dset_attrs[f"parameter{i}"])
 
-        hdf5_file.close()
-
-        if spectrum_type == "model":
-            if spectrum_name == "planck":
+        if model_type in ["model", "atmosphere"]:
+            if model_name == "planck":
                 from species.read.read_planck import ReadPlanck
 
                 readmodel = ReadPlanck(wavel_range)
 
-            elif spectrum_name == "powerlaw":
+            elif model_name == "powerlaw":
                 pass
 
             else:
                 from species.read.read_model import ReadModel
 
-                readmodel = ReadModel(spectrum_name, wavel_range=wavel_range)
+                readmodel = ReadModel(model_name, wavel_range=wavel_range)
 
-        elif spectrum_type == "calibration":
+        elif model_type == "calibration":
             from species.read.read_calibration import ReadCalibration
 
-            readcalib = ReadCalibration(spectrum_name, filter_name=None)
+            readcalib = ReadCalibration(model_name, filter_name=None)
 
         boxes = []
 
@@ -2724,19 +2789,23 @@ class Database:
             elif "distance" not in model_param and distance is not None:
                 model_param["distance"] = distance
 
-            if spectrum_type == "model":
-                if spectrum_name == "planck":
+            if "ext_model" in dset_attrs:
+                model_param["ext_model"] = dset_attrs["ext_model"]
+
+            if model_type in ["model", "atmosphere"]:
+                if model_name == "planck":
                     specbox = readmodel.get_spectrum(
                         model_param,
                         spec_res,
                         wavel_resample=wavel_resample,
                     )
 
-                elif spectrum_name == "powerlaw":
+                elif model_name == "powerlaw":
                     if wavel_resample is not None:
                         warnings.warn(
-                            "The 'wavel_resample' parameter is not support by the "
-                            "'powerlaw' model so the argument will be ignored."
+                            "The 'wavel_resample' parameter is not "
+                            "supported by the 'powerlaw' model so "
+                            "the argument will be ignored."
                         )
 
                     from species.util.model_util import powerlaw_spectrum
@@ -2779,7 +2848,7 @@ class Database:
 
                         specbox = create_box(
                             boxtype="model",
-                            model=spectrum_name,
+                            model=model_name,
                             wavelength=specbox_0.wavelength,
                             flux=flux_comb,
                             parameters=model_param,
@@ -2794,7 +2863,7 @@ class Database:
                             ext_filter=ext_filter,
                         )
 
-            elif spectrum_type == "calibration":
+            elif model_type == "calibration":
                 specbox = readcalib.get_spectrum(model_param)
 
             boxes.append(specbox)
@@ -2813,7 +2882,7 @@ class Database:
         self,
         tag: str,
         filter_name: str,
-        burnin: Optional[int] = None,
+        random: Optional[int] = None,
         phot_type: str = "magnitude",
         flux_units: str = "W m-2 um-1",
     ) -> np.ndarray:
@@ -2828,11 +2897,6 @@ class Database:
         filter_name : str
             Filter name for which the synthetic photometry
             will be computed.
-        burnin : int, None
-            Number of burnin steps to remove. No burnin is
-            removed if the argument is set to ``None``. Is
-            only applied on posterior distributions that
-            have been sampled with ``emcee``.
         phot_type : str
             Photometry type ('magnitude' or 'flux').
         flux_units : tuple(str, str), None
@@ -2853,56 +2917,51 @@ class Database:
                 "and should be set to 'magnitude' or 'flux'."
             )
 
-        if burnin is None:
-            burnin = 0
-
         with h5py.File(self.database, "r") as hdf5_file:
             dset = hdf5_file[f"results/fit/{tag}/samples"]
+            dset_attrs = dict(dset.attrs)
+            samples = np.array(dset)
 
-            if "n_param" in dset.attrs:
-                n_param = dset.attrs["n_param"]
-            elif "nparam" in dset.attrs:
-                n_param = dset.attrs["nparam"]
+        if random is not None:
+            rng = np.random.default_rng()
+            samples = rng.choice(samples, random, replace=False, axis=0, shuffle=False)
 
-            spectrum_type = dset.attrs["type"]
-            spectrum_name = dset.attrs["spectrum"]
+        if "n_param" in dset_attrs:
+            n_param = dset_attrs["n_param"]
+        elif "nparam" in dset_attrs:
+            n_param = dset_attrs["nparam"]
 
-            if "binary" in dset.attrs:
-                binary = dset.attrs["binary"]
-            else:
-                binary = False
+        if "model_type" in dset_attrs:
+            model_type = dset_attrs["model_type"]
+        else:
+            model_type = dset_attrs["type"]
 
-            if "parallax" in dset.attrs:
-                parallax = dset.attrs["parallax"]
-            else:
-                parallax = None
+        if "model_name" in dset_attrs:
+            model_name = dset_attrs["model_name"]
+        else:
+            model_name = dset_attrs["spectrum"]
 
-            if "distance" in dset.attrs:
-                distance = dset.attrs["distance"]
-            else:
-                distance = None
+        if "binary" in dset_attrs:
+            binary = dset_attrs["binary"]
+        else:
+            binary = False
 
-            samples = np.asarray(dset)
+        if "parallax" in dset_attrs:
+            parallax = dset_attrs["parallax"]
+        else:
+            parallax = None
 
-            if samples.ndim == 3:
-                if burnin > samples.shape[0]:
-                    raise ValueError(
-                        "The 'burnin' value is larger than the "
-                        f"number of steps ({samples.shape[1]}) "
-                        "that are made by the walkers."
-                    )
+        if "distance" in dset_attrs:
+            distance = dset_attrs["distance"]
+        else:
+            distance = None
 
-                samples = samples[burnin:, :, :]
-                samples = samples.reshape(
-                    (samples.shape[0] * samples.shape[1], n_param)
-                )
+        param = []
+        for i in range(n_param):
+            param.append(dset_attrs[f"parameter{i}"])
 
-            param = []
-            for i in range(n_param):
-                param.append(dset.attrs[f"parameter{i}"])
-
-        if spectrum_type == "model":
-            if spectrum_name == "powerlaw":
+        if model_type in ["model", "atmosphere"]:
+            if model_name == "powerlaw":
                 from species.phot.syn_phot import SyntheticPhotometry
 
                 synphot = SyntheticPhotometry(filter_name)
@@ -2911,12 +2970,12 @@ class Database:
             else:
                 from species.read.read_model import ReadModel
 
-                readmodel = ReadModel(spectrum_name, filter_name=filter_name)
+                readmodel = ReadModel(model_name, filter_name=filter_name)
 
-        elif spectrum_type == "calibration":
+        elif model_type == "calibration":
             from species.read.read_calibration import ReadCalibration
 
-            readcalib = ReadCalibration(spectrum_name, filter_name=filter_name)
+            readcalib = ReadCalibration(model_name, filter_name=filter_name)
 
         mcmc_phot = np.zeros((samples.shape[0]))
 
@@ -2936,8 +2995,11 @@ class Database:
             elif "distance" not in model_param and distance is not None:
                 model_param["distance"] = distance
 
-            if spectrum_type == "model":
-                if spectrum_name == "powerlaw":
+            if "ext_av" in model_param and "ext_model" in dset_attrs:
+                model_param["ext_model"] = dset_attrs["ext_model"]
+
+            if model_type in ["model", "atmosphere"]:
+                if model_name == "powerlaw":
                     from species.util.model_util import powerlaw_spectrum
 
                     pl_box = powerlaw_spectrum(synphot.wavel_range, model_param)
@@ -3004,7 +3066,7 @@ class Database:
                         else:
                             mcmc_phot[i], _ = readmodel.get_flux(model_param)
 
-            elif spectrum_type == "calibration":
+            elif model_type == "calibration":
                 if phot_type == "magnitude":
                     app_mag, _ = readcalib.get_magnitude(model_param=model_param)
                     mcmc_phot[i] = app_mag[0]
@@ -3164,7 +3226,6 @@ class Database:
     def get_samples(
         self,
         tag: str,
-        burnin: Optional[int] = None,
         random: Optional[int] = None,
         json_file: Optional[str] = None,
     ) -> SamplesBox:
@@ -3173,14 +3234,9 @@ class Database:
         ----------
         tag: str
             Database tag with the samples.
-        burnin : int, None
-            Number of burnin steps to remove. No burnin is
-            removed if the argument is set to ``None``. Is
-            only applied on posterior distributions that
-            have been sampled with ``emcee``.
         random : int, None
-            Number of random samples to select. All samples (with
-            the burnin excluded) are selected if set to ``None``.
+            Number of random samples to select. All samples are
+            selected if the argument is set to ``None``.
         json_file : str, None
             JSON file to store the posterior samples. The data will
             not be written if the argument is set to ``None``.
@@ -3193,31 +3249,13 @@ class Database:
 
         print_section("Get posterior samples")
 
-        if burnin is None:
-            burnin = 0
-
         with h5py.File(self.database, "r") as hdf5_file:
             dset = hdf5_file[f"results/fit/{tag}/samples"]
             ln_prob = np.asarray(hdf5_file[f"results/fit/{tag}/ln_prob"])
 
             samples = np.asarray(dset)
 
-            if samples.ndim == 3:
-                if burnin > samples.shape[0]:
-                    raise ValueError(
-                        "The 'burnin' value is larger than the number "
-                        f"of steps ({samples.shape[1]}) that are made "
-                        "by the walkers."
-                    )
-
-                samples = samples[burnin:, :, :]
-
-                if random is not None:
-                    ran_walker = np.random.randint(samples.shape[0], size=random)
-                    ran_step = np.random.randint(samples.shape[1], size=random)
-                    samples = samples[ran_walker, ran_step, :]
-
-            elif samples.ndim == 2 and random is not None:
+            if random is not None:
                 indices = np.random.randint(samples.shape[0], size=random)
                 samples = samples[indices, :]
 
@@ -3229,7 +3267,10 @@ class Database:
             for item in dset.attrs:
                 attributes[item] = dset.attrs[item]
 
-            spectrum = dset.attrs["spectrum"]
+            if "model_name" in dset.attrs:
+                model_name = dset.attrs["model_name"]
+            else:
+                model_name = dset.attrs["spectrum"]
 
             if "n_param" in dset.attrs:
                 n_param = dset.attrs["n_param"]
@@ -3239,7 +3280,6 @@ class Database:
             if "ln_evidence" in dset.attrs:
                 ln_evidence = dset.attrs["ln_evidence"]
             else:
-                # For backward compatibility
                 ln_evidence = None
 
             param = []
@@ -3249,8 +3289,6 @@ class Database:
                 print(f"   - {param[-1]}")
 
             # Printing uniform and normal priors
-            # Check if attributes are present for
-            # backward compatibility
 
             uniform_priors = {}
             normal_priors = {}
@@ -3304,10 +3342,17 @@ class Database:
                                 hdf5_file[f"{group_path}/{filter_item}"]
                             )
 
-                            print(
-                                f"   - {prior_item}/{filter_item} = "
-                                f"({norm_prior[0]}, {norm_prior[1]})"
-                            )
+                            if -0.1 < norm_prior[0] < 0.1:
+                                print(
+                                    f"   - {prior_item}/{filter_item} = "
+                                    f"({norm_prior[0]:.2e}, {norm_prior[1]:.2e})"
+                                )
+
+                            else:
+                                print(
+                                    f"   - {prior_item}/{filter_item} = "
+                                    f"({norm_prior[0]:.2f}, {norm_prior[1]:.2f})"
+                                )
 
                             normal_priors[f"{prior_item}/{filter_item}"] = (
                                 norm_prior[0],
@@ -3317,12 +3362,19 @@ class Database:
                     else:
                         norm_prior = np.array(hdf5_file[group_path])
 
-                        print(f"   - {prior_item} = ({norm_prior[0]}, {norm_prior[1]})")
+                        if -0.1 < norm_prior[0] < 0.1:
+                            print(
+                                f"   - {prior_item} = ({norm_prior[0]:.2e}, {norm_prior[1]:.2e})"
+                            )
+                        else:
+                            print(
+                                f"   - {prior_item} = ({norm_prior[0]:.2f}, {norm_prior[1]:.2f})"
+                            )
 
                         normal_priors[prior_item] = (norm_prior[0], norm_prior[1])
 
-        median_sample = self.get_median_sample(tag, burnin, verbose=False)
-        prob_sample = self.get_probable_sample(tag, burnin, verbose=False)
+        median_sample = self.get_median_sample(tag, verbose=False)
+        prob_sample = self.get_probable_sample(tag, verbose=False)
 
         if json_file is not None:
             samples_dict = {}
@@ -3337,7 +3389,7 @@ class Database:
 
         return create_box(
             "samples",
-            spectrum=spectrum,
+            model_name=model_name,
             parameters=param,
             samples=samples,
             ln_prob=ln_prob,
@@ -3377,7 +3429,6 @@ class Database:
             if "ln_evidence" in dset.attrs:
                 ln_evidence = dset.attrs["ln_evidence"]
             else:
-                # For backward compatibility
                 ln_evidence = (None, None)
 
         return ln_evidence[0], ln_evidence[1]
@@ -3427,12 +3478,16 @@ class Database:
         hdf5_file = h5py.File(self.database, "r")
         dset = hdf5_file[f"results/fit/{tag}/samples"]
 
-        spectrum = dset.attrs["spectrum"]
+        if "model_name" in dset.attrs:
+            model_name = dset.attrs["model_name"]
+        else:
+            model_name = dset.attrs["spectrum"]
+
         pt_profile = dset.attrs["pt_profile"]
 
-        if spectrum != "petitradtrans":
+        if model_name != "petitradtrans":
             raise ValueError(
-                f"The model spectrum of the posterior samples is '{spectrum}' "
+                f"The model spectrum of the posterior samples is '{model_name}' "
                 f"instead of 'petitradtrans'. Extracting P-T profiles is "
                 f"therefore not possible."
             )
@@ -3637,7 +3692,7 @@ class Database:
         coord_points: List[np.ndarray],
         object_name: str,
         spec_name: List[str],
-        model: str,
+        model_name: str,
         scale_spec: List[str],
         extra_scaling: Optional[np.ndarray],
         inc_phot: List[str],
@@ -3668,7 +3723,7 @@ class Database:
         spec_name : list(str)
             List with spectrum names that are stored at the object
             data of ``object_name``.
-        model : str
+        model_name : str
             Atmospheric model grid that is used for the comparison.
         scale_spec : list(str)
             List with spectrum names to which an additional scaling
@@ -3707,7 +3762,7 @@ class Database:
             )
 
             dset.attrs["object_name"] = str(object_name)
-            dset.attrs["model"] = str(model)
+            dset.attrs["model_name"] = str(model_name)
             dset.attrs["n_param"] = len(model_param)
             dset.attrs["n_spec_name"] = len(spec_name)
             dset.attrs["n_scale_spec"] = len(scale_spec)
@@ -3842,6 +3897,13 @@ class Database:
 
             samples = samples[np.newaxis,]
 
+        # Number of fixed parameters
+
+        fixed_param = {}
+        for i in range(samples.shape[1]):
+            if np.amin(samples[:, i]) == np.amax(samples[:, i]):
+                fixed_param[parameters[i]] = np.mean(samples[:, i])
+
         with h5py.File(self.database, "a") as hdf5_file:
             if "results" not in hdf5_file:
                 hdf5_file.create_group("results")
@@ -3852,7 +3914,7 @@ class Database:
             if f"results/fit/{tag}" in hdf5_file:
                 del hdf5_file[f"results/fit/{tag}"]
 
-            # Store the ln-likelihood
+            # Store the log-likelihood
             hdf5_file.create_dataset(f"results/fit/{tag}/ln_prob", data=samples[:, -1])
 
             # Remove the column with the log-likelihood value
@@ -3866,8 +3928,8 @@ class Database:
 
             dset = hdf5_file.create_dataset(f"results/fit/{tag}/samples", data=samples)
 
-            dset.attrs["type"] = "model"
-            dset.attrs["spectrum"] = "petitradtrans"
+            dset.attrs["model_type"] = "retrieval"
+            dset.attrs["model_name"] = "petitradtrans"
             dset.attrs["n_param"] = len(parameters)
 
             if "parallax" in radtrans:
@@ -3946,6 +4008,12 @@ class Database:
             else:
                 dset.attrs["lbl_opacity_sampling"] = radtrans["lbl_opacity_sampling"]
 
+            dset.attrs["n_fixed"] = int(len(fixed_param))
+
+            for key, value in fixed_param.items():
+                group_path = f"results/fit/{tag}/fixed_param/{key}"
+                hdf5_file.create_dataset(group_path, data=value)
+
         print(" [DONE]")
 
         # Set number of pressures
@@ -3958,49 +4026,44 @@ class Database:
 
         rt_object = None
 
+        from petitRADTRANS.chemistry.pre_calculated_chemistry import (
+            PreCalculatedEquilibriumChemistryTable,
+        )
+
+        eq_chem = PreCalculatedEquilibriumChemistryTable()
+        eq_chem.load()
+
         for i, cloud_item in enumerate(radtrans["cloud_species"]):
-            if f"{cloud_item[:-6].lower()}_tau" in parameters:
+            if f"{cloud_item}_tau" in parameters:
                 pressure = np.logspace(-6, 3, n_pressures)
                 cloud_mass = np.zeros(samples.shape[0])
 
                 if rt_object is None:
-                    print("Importing petitRADTRANS...", end="", flush=True)
                     from petitRADTRANS.radtrans import Radtrans
 
-                    print(" [DONE]")
+                    # Pressure array for Radtrans
 
-                    print("Importing chemistry module...", end="", flush=True)
-                    if "poor_mans_nonequ_chem" in sys.modules:
-                        from poor_mans_nonequ_chem.poor_mans_nonequ_chem import (
-                            interpol_abundances,
-                        )
-                    else:
-                        from petitRADTRANS.poor_mans_nonequ_chem.poor_mans_nonequ_chem import (
-                            interpol_abundances,
-                        )
-                    print(" [DONE]")
+                    if self.pressure_grid in ["standard", "manual"]:
+                        radtrans_press = np.copy(pressure)
+
+                    elif self.pressure_grid == "smaller":
+                        radtrans_press = pressure[::3]
+
+                    elif self.pressure_grid == "clouds":
+                        radtrans_press = pressure[::24]
 
                     rt_object = Radtrans(
+                        pressures=radtrans_press,
                         line_species=radtrans["line_species"],
                         rayleigh_species=["H2", "He"],
                         cloud_species=radtrans["cloud_species"].copy(),
-                        continuum_opacities=["H2-H2", "H2-He"],
-                        wlen_bords_micron=radtrans["wavel_range"],
-                        mode="c-k",
-                        test_ck_shuffle_comp=radtrans["scattering"],
-                        do_scat_emis=radtrans["scattering"],
+                        gas_continuum_contributors=["H2-H2", "H2-He"],
+                        wavelength_boundaries=radtrans["wavel_range"],
+                        line_opacity_mode="c-k",
+                        scattering_in_emission=radtrans["scattering"],
                     )
 
-                    if radtrans["pressure_grid"] == "standard":
-                        rt_object.setup_opa_structure(pressure)
-
-                    elif radtrans["pressure_grid"] == "smaller":
-                        rt_object.setup_opa_structure(pressure[::3])
-
-                    elif radtrans["pressure_grid"] == "clouds":
-                        rt_object.setup_opa_structure(pressure[::24])
-
-                desc = f"Calculating mass fractions of {cloud_item[:-6]}"
+                desc = f"Calculating mass fractions of {cloud_item}"
 
                 for j in tqdm(range(samples.shape[0]), desc=desc):
                     sample_dict = list_to_dict(
@@ -4050,12 +4113,13 @@ class Database:
                     else:
                         quench_press = None
 
-                    abund_in = interpol_abundances(
+                    abund_in = eq_chem.interpolate_mass_fractions(
                         np.full(pressure.shape[0], sample_dict["c_o_ratio"]),
                         np.full(pressure.shape[0], sample_dict["metallicity"]),
                         temp,
                         pressure,
-                        Pquench_carbon=quench_press,
+                        carbon_pressure_quench=quench_press,
+                        full=False,
                     )
 
                     # Calculate the scaled mass fraction of the clouds
@@ -4068,8 +4132,8 @@ class Database:
                         abund_in["MMW"],
                         "equilibrium",
                         abund_in,
-                        cloud_item[:-3],
-                        sample_dict[f"{cloud_item[:-6].lower()}_tau"],
+                        cloud_item,
+                        sample_dict[f"{cloud_item}_tau"],
                         pressure_grid=radtrans["pressure_grid"],
                     )
 
@@ -4090,9 +4154,6 @@ class Database:
                     n_param = dset_attrs["n_param"] + 1
 
                     dset.attrs["n_param"] = n_param
-                    dset.attrs[f"parameter{n_param-1}"] = (
-                        f"{cloud_item[:-6].lower()}_fraction"
-                    )
 
         if radtrans["quenching"] == "diffusion":
             p_quench = np.zeros(samples.shape[0])
@@ -4203,7 +4264,7 @@ class Database:
                 sample_scale = (sample_distance / sample_radius) ** 2
 
                 # Blackbody flux: sigma * Teff^4
-                flux_int = simps(sample_scale * box_item.flux, box_item.wavelength)
+                flux_int = simpson(sample_scale * box_item.flux, x=box_item.wavelength)
                 teff[i] = (flux_int / constants.SIGMA_SB) ** 0.25
 
             db_tag = f"results/fit/{tag}/samples"
@@ -4232,6 +4293,7 @@ class Database:
         random: Optional[int],
         wavel_range: Optional[Union[Tuple[float, float], str]] = None,
         spec_res: Optional[float] = None,
+        lbl_opacity_sampling: Optional[Union[int, np.int64]] = None,
     ) -> Tuple[List[ModelBox], Union[Any]]:
         """
         Function for extracting random spectra from the
@@ -4261,6 +4323,18 @@ class Database:
             Spectral resolution that is used for the smoothing with a
             Gaussian kernel. No smoothing is applied when the argument
             is set to ``None``.
+        lbl_opacity_sampling : int, None
+            This is the same parameter as in ``petitRADTRANS`` which is
+            used with ``res_mode='lbl'`` to downsample the line-by-line
+            opacities by selecting every ``lbl_opacity_sampling``-th
+            wavelength from the original sampling of
+            :math:`\\lambda/\\Delta \\lambda = 10^6`. Setting this
+            parameter will lower the computation time. By setting the
+            argument to ``None``, the value that was set with the
+            retrieval will be used. Setting a lower value will be
+            useful when calculating a low-resolution spectrum
+            across a wide wavelength range, which may require too
+            much memory when using the ``res_mode='lbl'`` mode.
 
         Returns
         -------
@@ -4286,12 +4360,11 @@ class Database:
 
         # Open the HDF5 database
 
-        hdf5_file = h5py.File(database_path, "r")
-
-        # Read the posterior samples
-
-        dset = hdf5_file[f"results/fit/{tag}/samples"]
-        samples = np.asarray(dset)
+        with h5py.File(database_path, "r") as hdf5_file:
+            # Read the posterior samples
+            dset = hdf5_file[f"results/fit/{tag}/samples"]
+            samples = np.asarray(dset)
+            attrs_dict = dict(dset.attrs)
 
         # Select random samples
 
@@ -4305,73 +4378,72 @@ class Database:
 
         # Get number of model parameters
 
-        if "n_param" in dset.attrs:
-            n_param = dset.attrs["n_param"]
-        elif "nparam" in dset.attrs:
-            n_param = dset.attrs["nparam"]
+        if "n_param" in attrs_dict:
+            n_param = attrs_dict["n_param"]
+        elif "nparam" in attrs_dict:
+            n_param = attrs_dict["nparam"]
 
         # Get number of line and cloud species
 
-        n_line_species = dset.attrs["n_line_species"]
-        n_cloud_species = dset.attrs["n_cloud_species"]
+        n_line_species = attrs_dict["n_line_species"]
+        n_cloud_species = attrs_dict["n_cloud_species"]
 
         # Get number of abundance nodes
 
-        if "abund_nodes" in dset.attrs:
-            if dset.attrs["abund_nodes"] == "None":
+        if "abund_nodes" in attrs_dict:
+            if attrs_dict["abund_nodes"] == "None":
                 abund_nodes = None
             else:
-                abund_nodes = dset.attrs["abund_nodes"]
+                abund_nodes = attrs_dict["abund_nodes"]
         else:
             abund_nodes = None
 
         # Convert numpy boolean to regular boolean
 
-        scattering = bool(dset.attrs["scattering"])
+        scattering = bool(attrs_dict["scattering"])
 
         # Get chemistry attributes
 
-        chemistry = dset.attrs["chemistry"]
+        chemistry = attrs_dict["chemistry"]
 
-        if dset.attrs["quenching"] == "None":
+        if attrs_dict["quenching"] == "None":
             quenching = None
         else:
-            quenching = dset.attrs["quenching"]
+            quenching = attrs_dict["quenching"]
 
         # Get P-T profile attributes
 
-        pt_profile = dset.attrs["pt_profile"]
+        pt_profile = attrs_dict["pt_profile"]
 
-        if "pressure_grid" in dset.attrs:
-            pressure_grid = dset.attrs["pressure_grid"]
+        if "pressure_grid" in attrs_dict:
+            pressure_grid = attrs_dict["pressure_grid"]
         else:
             pressure_grid = "smaller"
 
         # Get free temperarture nodes
 
-        if "temp_nodes" in dset.attrs:
-            if dset.attrs["temp_nodes"] == "None":
+        if "temp_nodes" in attrs_dict:
+            if attrs_dict["temp_nodes"] == "None":
                 temp_nodes = None
             else:
-                temp_nodes = dset.attrs["temp_nodes"]
+                temp_nodes = attrs_dict["temp_nodes"]
 
         else:
-            # For backward compatibility
             temp_nodes = None
 
         # Get distance
 
-        if "parallax" in dset.attrs:
-            distance = 1e3 / dset.attrs["parallax"][0]
-        elif "distance" in dset.attrs:
-            distance = dset.attrs["distance"]
+        if "parallax" in attrs_dict:
+            distance = 1e3 / attrs_dict["parallax"][0]
+        elif "distance" in attrs_dict:
+            distance = attrs_dict["distance"]
         else:
             distance = None
 
         # Get maximum pressure
 
-        if "max_press" in dset.attrs:
-            max_press = dset.attrs["max_press"]
+        if "max_press" in attrs_dict:
+            max_press = attrs_dict["max_press"]
         else:
             max_press = None
 
@@ -4379,21 +4451,21 @@ class Database:
 
         parameters = []
         for i in range(n_param):
-            parameters.append(dset.attrs[f"parameter{i}"])
+            parameters.append(attrs_dict[f"parameter{i}"])
 
         parameters = np.asarray(parameters)
 
         # Get wavelength range for median cloud optical depth
 
         if "log_tau_cloud" in parameters and wavel_range is not None:
-            cloud_wavel = (dset.attrs["wavel_min"], dset.attrs["wavel_max"])
+            cloud_wavel = (attrs_dict["wavel_min"], attrs_dict["wavel_max"])
         else:
             cloud_wavel = None
 
         # Get wavelength range for spectrum
 
         if wavel_range is None:
-            wavel_range = (dset.attrs["wavel_min"], dset.attrs["wavel_max"])
+            wavel_range = (attrs_dict["wavel_min"], attrs_dict["wavel_max"])
 
         # Create dictionary with array indices of the model parameters
 
@@ -4405,30 +4477,31 @@ class Database:
 
         line_species = []
         for i in range(n_line_species):
-            line_species.append(dset.attrs[f"line_species{i}"])
+            line_species.append(attrs_dict[f"line_species{i}"])
 
         # Create list with cloud species
 
         cloud_species = []
         for i in range(n_cloud_species):
-            cloud_species.append(dset.attrs[f"cloud_species{i}"])
+            cloud_species.append(attrs_dict[f"cloud_species{i}"])
 
         # Get resolution mode
 
-        if "res_mode" in dset.attrs:
-            res_mode = dset.attrs["res_mode"]
+        if "res_mode" in attrs_dict:
+            res_mode = attrs_dict["res_mode"]
         else:
             res_mode = "c-k"
 
         # High-resolution downsampling factor
 
-        if "lbl_opacity_sampling" in dset.attrs:
-            if dset.attrs["lbl_opacity_sampling"] == "None":
-                lbl_opacity_sampling = None
+        if lbl_opacity_sampling is None:
+            if "lbl_opacity_sampling" in attrs_dict:
+                if attrs_dict["lbl_opacity_sampling"] == "None":
+                    lbl_opacity_sampling = None
+                else:
+                    lbl_opacity_sampling = attrs_dict["lbl_opacity_sampling"]
             else:
-                lbl_opacity_sampling = dset.attrs["lbl_opacity_sampling"]
-        else:
-            lbl_opacity_sampling = None
+                lbl_opacity_sampling = None
 
         # Create an instance of ReadRadtrans
         # Afterwards, the names of the cloud_species have been shortened
@@ -4462,8 +4535,8 @@ class Database:
 
             # Get smoothing parameter for P-T profile
 
-            if "pt_smooth" in dset.attrs:
-                pt_smooth = dset.attrs["pt_smooth"]
+            if "pt_smooth" in attrs_dict:
+                pt_smooth = attrs_dict["pt_smooth"]
 
             elif "pt_smooth_0" in parameters:
                 pt_smooth = {}
@@ -4475,11 +4548,11 @@ class Database:
 
             # Get smoothing parameter for abundance profiles
 
-            if "abund_smooth" in dset.attrs:
-                if dset.attrs["abund_smooth"] == "None":
+            if "abund_smooth" in attrs_dict:
+                if attrs_dict["abund_smooth"] == "None":
                     abund_smooth = None
                 else:
-                    abund_smooth = dset.attrs["abund_smooth"]
+                    abund_smooth = attrs_dict["abund_smooth"]
             else:
                 abund_smooth = None
 
@@ -4527,15 +4600,11 @@ class Database:
 
         print(" [DONE]")
 
-        # Close the HDF5 database
-
-        hdf5_file.close()
-
         return boxes, read_rad
 
     @typechecked
     def get_retrieval_teff(
-        self, tag: str, random: int = 100
+        self, tag: str, wavel_range: Tuple[float, float], random: int = 100,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Function for calculating :math:`T_\\mathrm{eff}`
@@ -4549,8 +4618,13 @@ class Database:
         ----------
         tag : str
             Database tag with the posterior samples.
+        wavel_range : tuple(float, float)
+            Wavelength range (um) across which the spectra are calculated
+            and interpolated. A wide range should be set for an accurate
+            calculation of the bolometric luminosity, but the boundaries
+            should be within the available range of the opacities.
         random : int
-            Number of randomly selected samples.
+            Number of randomly selected samples (default: 100).
 
         Returns
         -------
@@ -4563,7 +4637,8 @@ class Database:
         print(f"Calculating Teff from {random} posterior samples... ")
 
         boxes, _ = self.get_retrieval_spectra(
-            tag=tag, random=random, wavel_range=(0.5, 50.0), spec_res=500.0
+            tag=tag, random=random, wavel_range=wavel_range,
+            spec_res=None, lbl_opacity_sampling=10000,
         )
 
         t_eff = np.zeros(len(boxes))
@@ -4583,7 +4658,7 @@ class Database:
             sample_scale = (sample_distance / sample_radius) ** 2
 
             # Blackbody flux: sigma * Teff^4
-            flux_int = simps(sample_scale * box_item.flux, box_item.wavelength)
+            flux_int = simpson(sample_scale * box_item.flux, x=box_item.wavelength)
             t_eff[i] = (flux_int / constants.SIGMA_SB) ** 0.25
 
             # Bolometric luminosity: 4 * pi * R^2 * sigma * Teff^4
@@ -4644,7 +4719,7 @@ class Database:
         self, tag: str, sample_type: str = "median", json_file: Optional[str] = None
     ) -> Dict[str, float]:
         """
-        Function for converting the median are maximum likelihood
+        Function for converting the median or maximum likelihood
         posterior parameters of ``petitRADTRANS`` into a dictionary
         of input parameters for ``petitCODE``.
 
@@ -4764,24 +4839,23 @@ class Database:
                 knot_press, knot_temp, pressure, pt_smooth=pt_smooth
             )
 
-        if "poor_mans_nonequ_chem" in sys.modules:
-            from poor_mans_nonequ_chem.poor_mans_nonequ_chem import interpol_abundances
-        else:
-            from petitRADTRANS.poor_mans_nonequ_chem.poor_mans_nonequ_chem import (
-                interpol_abundances,
-            )
-
-        # Interpolate the abundances, following chemical equilibrium
-        abund_in = interpol_abundances(
-            np.full(pressure.shape, model_param["c_o_ratio"]),
-            np.full(pressure.shape, model_param["metallicity"]),
-            temperature,
-            pressure,
-            Pquench_carbon=p_quench,
+        from petitRADTRANS.chemistry.pre_calculated_chemistry import (
+            PreCalculatedEquilibriumChemistryTable,
         )
 
-        # Extract the mean molecular weight
-        mmw = abund_in["MMW"]
+        eq_chem = PreCalculatedEquilibriumChemistryTable()
+        eq_chem.load()
+
+        # Interpolate the abundances, following chemical equilibrium
+
+        abund_in, mmw, _ = eq_chem.interpolate_mass_fractions(
+            np.full(pressure.shape[0], model_param["c_o_ratio"]),
+            np.full(pressure.shape[0], model_param["metallicity"]),
+            temperature,
+            pressure,
+            carbon_pressure_quench=p_quench,
+            full=True,
+        )
 
         cloud_fractions = {}
 
@@ -4790,23 +4864,18 @@ class Database:
 
             for i, item in enumerate(cloud_species):
                 if i == 0:
-                    cloud_fractions[item[:-3]] = 0.0
+                    cloud_fractions[item] = 0.0
 
                 else:
-                    cloud_1 = item[:-6].lower()
-                    cloud_2 = cloud_species[0][:-6].lower()
-
-                    cloud_fractions[item[:-3]] = model_param[
-                        f"{cloud_1}_{cloud_2}_ratio"
+                    cloud_fractions[item] = model_param[
+                        f"{item}_{cloud_species[0]}_ratio"
                     ]
 
         else:
             # tau_cloud = None
 
             for i, item in enumerate(cloud_species):
-                cloud_fractions[item[:-3]] = model_param[
-                    f"{item[:-6].lower()}_fraction"
-                ]
+                cloud_fractions[item] = model_param[f"{item}_fraction"]
 
         log_x_base = log_x_cloud_base(
             model_param["c_o_ratio"], model_param["metallicity"], cloud_fractions
@@ -4816,7 +4885,7 @@ class Database:
 
         for item in cloud_species:
             p_base_item = find_cloud_deck(
-                item[:-6],
+                item,
                 pressure,
                 temperature,
                 model_param["metallicity"],
@@ -4825,15 +4894,15 @@ class Database:
                 plotting=False,
             )
 
-            abund_in[item[:-3]] = np.zeros_like(temperature)
+            abund_in[item] = np.zeros_like(temperature)
 
-            abund_in[item[:-3]][pressure < p_base_item] = (
-                10.0 ** log_x_base[item[:-6]]
+            abund_in[item][pressure < p_base_item] = (
+                10.0 ** log_x_base[item]
                 * (pressure[pressure <= p_base_item] / p_base_item)
                 ** model_param["fsed"]
             )
 
-            p_base[item[:-3]] = p_base_item
+            p_base[item] = p_base_item
 
             indices = np.where(pressure <= p_base_item)[0]
             pcode_param[f"{item}_base"] = pressure[np.amax(indices)]
@@ -4879,8 +4948,8 @@ class Database:
 
         # Blackbody flux: sigma * Teff^4
         # Scale the flux back to the planet surface
-        flux_int = simps(
-            model_box.flux * (distance / radius) ** 2, model_box.wavelength
+        flux_int = simpson(
+            model_box.flux * (distance / radius) ** 2, x=model_box.wavelength
         )
         pcode_param["teff"] = (flux_int / constants.SIGMA_SB) ** 0.25
 
@@ -4888,7 +4957,7 @@ class Database:
             cloud_scaling = read_rad.rt_object.cloud_scaling_factor
 
             for item in cloud_species_full:
-                cloud_abund = abund_in[item[:-3]]
+                cloud_abund = abund_in[item]
                 indices = np.where(cloud_abund > 0.0)[0]
                 pcode_param[f"{item}_abund"] = (
                     cloud_scaling * cloud_abund[np.amax(indices)]
@@ -4896,7 +4965,7 @@ class Database:
 
         else:
             for item in cloud_species_full:
-                cloud_abund = abund_in[item[:-3]]
+                cloud_abund = abund_in[item]
                 indices = np.where(cloud_abund > 0.0)[0]
                 pcode_param[f"{item}_abund"] = cloud_abund[np.amax(indices)]
 

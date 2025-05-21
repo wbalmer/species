@@ -6,13 +6,13 @@ import os
 import warnings
 
 from configparser import ConfigParser
-from typing import Union, Tuple
+from typing import Optional, Tuple, Union
 
 import h5py
 import numpy as np
 
 from typeguard import typechecked
-from scipy import interpolate
+from scipy.interpolate import interp1d, InterpolatedUnivariateSpline
 
 from species.data.filter_data.filter_data import add_filter_profile
 from species.data.spec_data.spec_vega import add_vega
@@ -85,7 +85,7 @@ class ReadFilter:
         return data
 
     @typechecked
-    def interpolate_filter(self) -> interpolate.interp1d:
+    def interpolate_filter(self) -> interp1d:
         """
         Interpolate a filter profile with the `interp1d <https://
         docs.scipy.org/doc/scipy/reference/generated/
@@ -100,7 +100,7 @@ class ReadFilter:
 
         data = self.get_filter()
 
-        return interpolate.interp1d(
+        return interp1d(
             data[:, 0],
             data[:, 1],
             kind="linear",
@@ -140,7 +140,7 @@ class ReadFilter:
 
         data = self.get_filter()
 
-        return np.trapz(data[:, 0] * data[:, 1], x=data[:, 0]) / np.trapz(
+        return np.trapezoid(data[:, 0] * data[:, 1], x=data[:, 0]) / np.trapezoid(
             data[:, 1], x=data[:, 0]
         )
 
@@ -159,13 +159,23 @@ class ReadFilter:
 
         filter_profile = self.get_filter()
 
-        with h5py.File(self.database, "a") as hdf5_file:
-            if "spectra/calibration/vega" not in hdf5_file:
+        with h5py.File(self.database, "r") as hdf5_file:
+            # Check if the Vega spectrum is found in 'r'
+            # mode because the 'a' mode is not possible
+            # when using multiprocessing
+            if "spectra/calibration/vega" in hdf5_file:
+                vega_found = True
+            else:
+                vega_found = False
+
+        if not vega_found:
+            with h5py.File(self.database, "a") as hdf5_file:
                 add_vega(self.data_folder, hdf5_file)
 
+        with h5py.File(self.database, "r") as hdf5_file:
             vega_spec = np.array(hdf5_file["spectra/calibration/vega"])
 
-        flux_interp = interpolate.interp1d(
+        flux_interp = interp1d(
             vega_spec[0,],
             vega_spec[1,],
             bounds_error=False,
@@ -174,36 +184,44 @@ class ReadFilter:
 
         flux_filter = flux_interp(filter_profile[:, 0])
 
-        return np.trapz(
+        return np.trapezoid(
             filter_profile[:, 0] * filter_profile[:, 1] * flux_filter,
             x=filter_profile[:, 0],
-        ) / np.trapz(filter_profile[:, 1] * flux_filter, x=filter_profile[:, 0])
+        ) / np.trapezoid(filter_profile[:, 1] * flux_filter, x=filter_profile[:, 0])
 
     @typechecked
-    def filter_fwhm(self) -> float:
+    def filter_fwhm(self) -> Optional[float]:
         """
-        Calculate the full width at half maximum (FWHM) of the filter
-        profile.
+        Calculate the full width at half maximum (FWHM)
+        of the filter profile.
 
         Returns
         -------
-        float
+        float, None
             Full width at half maximum (:math:`\\mu\\mathrm{m}`).
+            Returns ``None`` if the filter has only one wavelength.
+            with a non-zero transmission.
         """
 
         data = self.get_filter()
 
-        spline = interpolate.InterpolatedUnivariateSpline(
-            data[:, 0], data[:, 1] - np.max(data[:, 1]) / 2.0
-        )
-        root = spline.roots()
+        if len(np.nonzero(data[:, 1])[0]) > 1:
+            spline = InterpolatedUnivariateSpline(
+                data[:, 0], data[:, 1] - np.max(data[:, 1]) / 2.0
+            )
+            root = spline.roots()
 
-        diff = root - self.mean_wavelength()
+            diff = root - self.mean_wavelength()
 
-        root1 = np.amax(diff[diff < 0.0])
-        root2 = np.amin(diff[diff > 0.0])
+            root1 = np.amax(diff[diff < 0.0])
+            root2 = np.amin(diff[diff > 0.0])
 
-        return root2 - root1
+            filt_fwhm = root2 - root1
+
+        else:
+            filt_fwhm = None
+
+        return filt_fwhm
 
     @typechecked
     def effective_width(self) -> Union[np.float32, np.float64]:
@@ -221,7 +239,7 @@ class ReadFilter:
 
         data = self.get_filter()
 
-        return np.trapz(data[:, 1], x=data[:, 0]) / np.amax(data[:, 1])
+        return np.trapezoid(data[:, 1], x=data[:, 0]) / np.amax(data[:, 1])
 
     @typechecked
     def detector_type(self) -> str:

@@ -115,10 +115,7 @@ class SyntheticPhotometry:
             self.wavel_range = read_filt.wavelength_range()
 
         with h5py.File(self.database, "r") as hdf5_file:
-            if "spectra/calibration/vega" in hdf5_file:
-                vega_found = True
-            else:
-                vega_found = False
+            vega_found = "spectra/calibration/vega" in hdf5_file
 
         if not vega_found:
             with h5py.File(self.database, "a") as hdf5_file:
@@ -285,7 +282,7 @@ class SyntheticPhotometry:
                         f"The filter profile of {self.filter_name} "
                         f"({self.wavel_range[0]:.4f}-{self.wavel_range[1]:.4f}) "
                         f"lies outside the wavelength range of the spectrum. "
-                        f"The synthetic flux is set to NaN."
+                        f"The returned synthetic flux is therefore set to NaN."
                     )
 
                     syn_flux = np.nan
@@ -325,8 +322,8 @@ class SyntheticPhotometry:
                         )
                         integrand2 = wavelength[indices] * transmission[indices]
 
-                    integral1 = np.trapz(integrand1, x=wavelength[indices])
-                    integral2 = np.trapz(integrand2, x=wavelength[indices])
+                    integral1 = np.trapezoid(integrand1, x=wavelength[indices])
+                    integral2 = np.trapezoid(integrand2, x=wavelength[indices])
 
                     syn_flux = integral1 / integral2
 
@@ -360,7 +357,7 @@ class SyntheticPhotometry:
             error_flux = np.std(phot_random)
 
         elif error is not None and np.any(np.isnan(error)):
-            warnings.warn("Spectum contains NaN so can not calculate the error.")
+            warnings.warn("Spectum contains NaN so cannot calculate the error.")
             error_flux = None
 
         else:
@@ -482,7 +479,7 @@ class SyntheticPhotometry:
             error_app_mag = np.std(mag_random)
 
         elif error is not None and np.any(np.isnan(error)):
-            warnings.warn("Spectum contains NaN so can not calculate the error.")
+            warnings.warn("Spectum contains NaN so cannot calculate the error.")
             error_app_mag = None
 
         else:

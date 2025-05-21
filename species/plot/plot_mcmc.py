@@ -33,177 +33,14 @@ from species.util.retrieval_util import (
     atomic_masses,
     calc_metal_ratio,
     get_line_species,
-    mass_fractions,
+    mass_frac_dict,
     mean_molecular_weight,
 )
 
 
 @typechecked
-def plot_walkers(
-    tag: str,
-    nsteps: Optional[int] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    output: Optional[str] = None,
-) -> mpl.figure.Figure:
-    """
-    Function to plot the step history of the walkers.
-
-    Parameters
-    ----------
-    tag : str
-        Database tag with the samples.
-    nsteps : int, None
-        Number of steps that are plotted. All steps are
-        plotted if the argument is set to ``None``.
-    offset : tuple(float, float), None
-        Offset of the x- and y-axis label. Default values
-        are used if the arguments is set to ``None``.
-    output : str, None
-        Output filename for the plot. The plot is shown in an
-        interface window if the argument is set to ``None``.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The ``Figure`` object that can be used for further
-        customization of the plot.
-    """
-
-    from species.data.database import Database
-
-    species_db = Database()
-    box = species_db.get_samples(tag)
-
-    if output is None:
-        print("Plotting walkers...", end="", flush=True)
-    else:
-        print(f"Plotting walkers: {output}...", end="", flush=True)
-
-    plt.rcParams["font.family"] = "serif"
-    plt.rcParams["mathtext.fontset"] = "dejavuserif"
-
-    samples = box.samples
-    labels = update_labels(box.parameters)
-
-    if samples.ndim == 2:
-        raise ValueError(
-            f"The samples of '{tag}' have only 2 dimensions "
-            f"whereas 3 are required for plotting the walkers. "
-            f"The plot_walkers function can only be used after "
-            "running the MCMC with run_mcmc and not after "
-            f"running run_ultranest or run_multinest."
-        )
-
-    ndim = samples.shape[-1]
-
-    fig = plt.figure(figsize=(6, ndim * 1.5))
-    gridsp = mpl.gridspec.GridSpec(ndim, 1)
-    gridsp.update(wspace=0, hspace=0.1, left=0, right=1, bottom=0, top=1)
-
-    for i in range(ndim):
-        ax = plt.subplot(gridsp[i, 0])
-
-        if i == ndim - 1:
-            ax.tick_params(
-                axis="both",
-                which="major",
-                colors="black",
-                labelcolor="black",
-                direction="in",
-                width=1,
-                length=5,
-                labelsize=12,
-                top=True,
-                bottom=True,
-                left=True,
-                right=True,
-                labelbottom=True,
-            )
-
-            ax.tick_params(
-                axis="both",
-                which="minor",
-                colors="black",
-                labelcolor="black",
-                direction="in",
-                width=1,
-                length=3,
-                labelsize=12,
-                top=True,
-                bottom=True,
-                left=True,
-                right=True,
-                labelbottom=True,
-            )
-
-        else:
-            ax.tick_params(
-                axis="both",
-                which="major",
-                colors="black",
-                labelcolor="black",
-                direction="in",
-                width=1,
-                length=5,
-                labelsize=12,
-                top=True,
-                bottom=True,
-                left=True,
-                right=True,
-                labelbottom=False,
-            )
-
-            ax.tick_params(
-                axis="both",
-                which="minor",
-                colors="black",
-                labelcolor="black",
-                direction="in",
-                width=1,
-                length=3,
-                labelsize=12,
-                top=True,
-                bottom=True,
-                left=True,
-                right=True,
-                labelbottom=False,
-            )
-
-        if i == ndim - 1:
-            ax.set_xlabel("Step number", fontsize=10)
-        else:
-            ax.set_xlabel("", fontsize=10)
-
-        ax.set_ylabel(labels[i], fontsize=10)
-
-        if offset is not None:
-            ax.get_xaxis().set_label_coords(0.5, offset[0])
-            ax.get_yaxis().set_label_coords(offset[1], 0.5)
-
-        else:
-            ax.get_xaxis().set_label_coords(0.5, -0.22)
-            ax.get_yaxis().set_label_coords(-0.09, 0.5)
-
-        if nsteps is not None:
-            ax.set_xlim(0, nsteps)
-
-        for j in range(samples.shape[0]):
-            ax.plot(samples[j, :, i], ls="-", lw=0.5, color="black", alpha=0.5)
-
-    if output is None:
-        plt.show()
-    else:
-        plt.savefig(output, bbox_inches="tight")
-
-    print(" [DONE]")
-
-    return fig
-
-
-@typechecked
 def plot_posterior(
     tag: str,
-    burnin: Optional[int] = None,
     title: Optional[str] = None,
     offset: Optional[Tuple[float, float]] = None,
     title_fmt: Union[str, List[str]] = ".2f",
@@ -222,16 +59,13 @@ def plot_posterior(
     show_priors: bool = False,
 ) -> mpl.figure.Figure:
     """
-    Function to plot the posterior distribution
-    of the fitted parameters.
+    Function to plot the posterior distribution of the
+    estimated model parameters.
 
     Parameters
     ----------
     tag : str
         Database tag with the samples.
-    burnin : int, None
-        Number of burnin steps to exclude. All samples
-        are used if the argument is set to ``None``.
     title : str, None
         Plot title. No title is shown if the arguments
         is set to ``None``.
@@ -306,20 +140,30 @@ def plot_posterior(
 
     species_db = Database()
 
-    box = species_db.get_samples(tag, burnin=burnin)
+    box = species_db.get_samples(tag)
     samples = box.samples
 
     print_section("Plot posterior distributions")
 
     print(f"Database tag: {tag}")
     print(f"Object type: {object_type}")
-    print(f"Manual parameters: {param_inc}")
+    print(f"Manual parameters: {param_inc}\n")
+
+    if "model_type" in box.attributes:
+        print((f"Model type: {box.attributes['model_type']}"))
+    elif "spec_type" in box.attributes:
+        print((f"Model type: {box.attributes['spec_type']}"))
+
+    if "model_name" in box.attributes:
+        print((f"Model name: {box.attributes['model_name']}"))
+    elif "spec_name" in box.attributes:
+        print((f"Model type: {box.attributes['spec_name']}"))
+
+    if "sampler" in box.attributes:
+        print((f"Sampler: {box.attributes['sampler']}"))
 
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
-
-    if burnin is None:
-        burnin = 0
 
     # index_sel = [0, 1, 8, 9, 14]
     # samples = samples[:, index_sel]
@@ -336,7 +180,7 @@ def plot_posterior(
 
     ndim = len(box.parameters)
 
-    if not inc_pt_param and box.spectrum == "petitradtrans":
+    if not inc_pt_param and box.model_name == "petitradtrans":
         pt_param = [
             "tint",
             "t1",
@@ -379,7 +223,7 @@ def plot_posterior(
         for item in item_del:
             box.parameters.remove(item)
 
-    if box.spectrum == "petitradtrans":
+    if box.model_name == "petitradtrans":
         n_line_species = box.attributes["n_line_species"]
 
         line_species = []
@@ -389,7 +233,7 @@ def plot_posterior(
     if "abund_nodes" not in box.attributes:
         box.attributes["abund_nodes"] = "None"
 
-    if box.spectrum == "petitradtrans" and box.attributes["chemistry"] == "free":
+    if box.model_name == "petitradtrans" and box.attributes["chemistry"] == "free":
         if box.attributes["abund_nodes"] == "None":
             box.parameters.append("c_h_ratio")
             box.parameters.append("o_h_ratio")
@@ -422,7 +266,7 @@ def plot_posterior(
 
     if (
         vmr
-        and box.spectrum == "petitradtrans"
+        and box.model_name == "petitradtrans"
         and box.attributes["chemistry"] == "free"
     ):
         print("Changing mass fractions to number fractions...", end="", flush=True)
@@ -449,7 +293,7 @@ def plot_posterior(
                     log_x_abund[param_item] = samples_item[param_index]
 
             # Create a dictionary with all mass fractions, including H2 and He
-            x_abund = mass_fractions(log_x_abund, line_species)
+            x_abund = mass_frac_dict(log_x_abund, line_species)
 
             # Calculate the mean molecular weight from the input mass fractions
             mmw = mean_molecular_weight(x_abund)
@@ -471,8 +315,12 @@ def plot_posterior(
         box.samples = updated_samples
 
     print("\nMedian parameters:")
-    for key, value in box.median_sample.items():
-        print(f"   - {key} = {value:.2e}")
+    for param_key, param_value in box.median_sample.items():
+        if isinstance(param_value, float):
+            if -0.1 < param_value < 0.1:
+                print(f"   - {param_key} = {param_value:.2e}")
+            else:
+                print(f"   - {param_key} = {param_value:.2f}")
 
     if "gauss_mean" in box.parameters:
         param_index = np.argwhere(np.array(box.parameters) == "gauss_mean")[0]
@@ -483,13 +331,17 @@ def plot_posterior(
         samples[:, param_index] *= 1e3  # (um) -> (nm)
 
     if box.prob_sample is not None:
-        print("\nSample with highest probability:")
-        for key, value in box.prob_sample.items():
-            print(f"   - {key} = {value:.2e}")
+        print("\nSample with the maximum likelihood:")
+        for param_key, param_value in box.prob_sample.items():
+            if isinstance(param_value, float):
+                if -0.1 < param_value < 0.1:
+                    print(f"   - {param_key} = {param_value:.2e}")
+                else:
+                    print(f"   - {param_key} = {param_value:.2f}")
 
-    for item in box.parameters:
-        if item[0:11] == "wavelength_":
-            param_index = box.parameters.index(item)
+    for param_item in box.parameters:
+        if param_item[0:11] == "wavelength_":
+            param_index = box.parameters.index(param_item)
 
             # (um) -> (nm)
             box.samples[:, param_index] *= 1e3
@@ -509,7 +361,7 @@ def plot_posterior(
             teff_index = np.argwhere(np.array(box.parameters) == "teff")[0]
             radius_index = np.argwhere(np.array(box.parameters) == "radius")[0]
 
-            lum_planet = (
+            lum_atm = (
                 4.0
                 * np.pi
                 * (samples[..., radius_index] * constants.R_JUP) ** 2
@@ -546,16 +398,16 @@ def plot_posterior(
                     / constants.L_SUN
                 )
 
-                samples = np.append(samples, np.log10(lum_planet + lum_disk), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
-                samples = np.append(samples, lum_disk / lum_planet, axis=-1)
-                box.parameters.append("luminosity_disk_planet")
+                samples = np.append(samples, np.log10(lum_disk), axis=-1)
+                box.parameters.append("log_lum_disk")
                 ndim += 1
 
                 radius_bb = np.sqrt(
-                    lum_planet
+                    lum_atm
                     * constants.L_SUN
                     / (
                         16.0
@@ -590,7 +442,7 @@ def plot_posterior(
                     )
 
                     radius_bb = np.sqrt(
-                        lum_planet
+                        lum_atm
                         * constants.L_SUN
                         / (
                             16.0
@@ -604,17 +456,17 @@ def plot_posterior(
                     box.parameters.append(f"radius_bb_{disk_idx}")
                     ndim += 1
 
-                samples = np.append(samples, np.log10(lum_planet + lum_disk), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
-                samples = np.append(samples, lum_disk / lum_planet, axis=-1)
-                box.parameters.append("luminosity_disk_planet")
+                samples = np.append(samples, np.log10(lum_disk), axis=-1)
+                box.parameters.append("log_lum_disk")
                 ndim += 1
 
             else:
-                samples = np.append(samples, np.log10(lum_planet), axis=-1)
-                box.parameters.append("luminosity")
+                samples = np.append(samples, np.log10(lum_atm), axis=-1)
+                box.parameters.append("log_lum_atm")
                 ndim += 1
 
         for i in range(100):
@@ -632,7 +484,7 @@ def plot_posterior(
                 )
 
                 samples = np.append(samples, np.log10(luminosity), axis=-1)
-                box.parameters.append(f"luminosity_{i}")
+                box.parameters.append(f"log_lum_{i}")
                 ndim += 1
 
             else:
@@ -659,7 +511,7 @@ def plot_posterior(
                     break
 
             samples = np.append(samples, np.log10(luminosity), axis=-1)
-            box.parameters.append("luminosity")
+            box.parameters.append("log_lum")
             ndim += 1
 
             # teff_index = np.argwhere(np.array(box.parameters) == 'teff_0')
@@ -962,14 +814,36 @@ def plot_posterior(
 
     if param_inc is not None:
         param_new = np.zeros((samples.shape[0], len(param_inc)))
-        for i, item in enumerate(param_inc):
-            if item in box.parameters:
-                param_index = box.parameters.index(item)
-                param_new[:, i] = samples[:, param_index]
+        param_inc_new = []
+        for param_idx, param_item in enumerate(param_inc):
+            if param_item in box.parameters:
+                param_index = box.parameters.index(param_item)
+                param_new[:, param_idx] = samples[:, param_index]
+                param_inc_new.append(param_item)
 
-        box.parameters = param_inc
-        ndim = len(param_inc)
+        box.parameters = param_inc_new
+        ndim = len(param_inc_new)
         samples = param_new
+
+    # Only for fitting evolutionary models
+    # Remove index from parameter names when fitting 1 planet
+
+    if "model_type" in box.attributes and box.attributes["model_type"] == "evolution":
+        if box.attributes["n_planets"] == 1:
+            param_copy = box.parameters.copy()
+            box.parameters = []
+
+            for param_item in param_copy:
+                if param_item[-2:] == "_0":
+                    box.parameters.append(param_item[:-2])
+                else:
+                    box.parameters.append(param_item)
+
+    # Parameters to be included in the corner plot
+
+    print("\nParameters included in corner plot:")
+    for param_item in box.parameters:
+        print(f"   - {param_item}")
 
     # Update axes labels
 
@@ -1000,7 +874,7 @@ def plot_posterior(
 
     if max_prob:
         max_idx = np.argmax(box.ln_prob)
-        max_sample = samples[max_idx, ]
+        max_sample = samples[max_idx,]
 
     if isinstance(title_fmt, list) and len(title_fmt) != ndim:
         raise ValueError(
@@ -1041,6 +915,8 @@ def plot_posterior(
             hist_title = f"{param_label} = {best_fit} {unit_label}"
 
         hist_titles.append(hist_title)
+
+    # Create corner plot
 
     fig = corner.corner(
         samples,
@@ -1148,12 +1024,10 @@ def plot_posterior(
     if title:
         fig.suptitle(title, y=1.02, fontsize=16)
 
-    if output is not None:
-        print(f"\nOutput: {output}")
-
     if output is None:
         plt.show()
     else:
+        print(f"\nOutput: {output}")
         plt.savefig(output, bbox_inches="tight")
 
     return fig
@@ -1163,7 +1037,7 @@ def plot_posterior(
 def plot_mag_posterior(
     tag: str,
     filter_name: str,
-    burnin: Optional[int] = None,
+    n_samples: Optional[int] = None,
     xlim: Optional[Tuple[float, float]] = None,
     output: Optional[str] = None,
 ) -> Tuple[np.ndarray, mpl.figure.Figure]:
@@ -1177,9 +1051,9 @@ def plot_mag_posterior(
         Database tag with the posterior samples.
     filter_name : str
         Filter name.
-    burnin : int, None
-        Number of burnin steps to exclude. All samples are
-        used if the argument is set to ``None``.
+    n_samples : int, None
+        Number of randomly drawn samples. All samples of the posterior
+        are selected if the arguments is set to ``None``.
     xlim : tuple(float, float), None
         Axis limits. Automatically set if the argument is
         set to ``None``.
@@ -1199,16 +1073,16 @@ def plot_mag_posterior(
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-    from species.data.database import Database
-
-    species_db = Database()
-
-    samples = species_db.get_mcmc_photometry(tag, filter_name, burnin)
-
     if output is None:
         print("Plotting photometry samples...", end="", flush=True)
     else:
         print(f"Plotting photometry samples: {output}...", end="", flush=True)
+
+    from species.data.database import Database
+
+    species_db = Database()
+
+    samples = species_db.get_mcmc_photometry(tag, filter_name, random=n_samples)
 
     fig = corner.corner(
         samples,
@@ -1272,7 +1146,6 @@ def plot_mag_posterior(
 @typechecked
 def plot_size_distributions(
     tag: str,
-    burnin: Optional[int] = None,
     random: Optional[int] = None,
     offset: Optional[Tuple[float, float]] = None,
     output: Optional[str] = None,
@@ -1285,10 +1158,6 @@ def plot_size_distributions(
     ----------
     tag : str
         Database tag with the samples.
-    burnin : int, None
-        Number of burnin steps to exclude. All samples are used if the
-        argument is set to ``None``. Only required after running MCMC
-        with :func:`~species.fit.fit_model.FitModel.run_mcmc`.
     random : int, None
         Number of randomly selected samples. All samples are used
         if the argument set to ``None``.
@@ -1316,9 +1185,6 @@ def plot_size_distributions(
     else:
         print(f"Plotting size distributions: {output}...", end="", flush=True)
 
-    if burnin is None:
-        burnin = 0
-
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
@@ -1330,22 +1196,9 @@ def plot_size_distributions(
 
     samples = box.samples
 
-    if samples.ndim == 2 and random is not None:
+    if random is not None:
         ran_index = np.random.randint(samples.shape[0], size=random)
         samples = samples[ran_index,]
-
-    elif samples.ndim == 3:
-        if burnin > samples.shape[1]:
-            raise ValueError(
-                f"The 'burnin' value is larger than the number of steps "
-                f"({samples.shape[1]}) that are made by the walkers."
-            )
-
-        samples = samples[:, burnin:, :]
-
-        ran_walker = np.random.randint(samples.shape[0], size=random)
-        ran_step = np.random.randint(samples.shape[1], size=random)
-        samples = samples[ran_walker, ran_step, :]
 
     if "lognorm_radius" in box.parameters:
         log_r_index = box.parameters.index("lognorm_radius")
@@ -1448,7 +1301,6 @@ def plot_size_distributions(
 @typechecked
 def plot_extinction(
     tag: str,
-    burnin: Optional[int] = None,
     random: Optional[int] = None,
     wavel_range: Optional[Tuple[float, float]] = None,
     xlim: Optional[Tuple[float, float]] = None,
@@ -1466,10 +1318,6 @@ def plot_extinction(
     ----------
     tag : str
         Database tag with the samples.
-    burnin : int, None
-        Number of burnin steps to exclude. All samples are used if the
-        argument is set to ``None``. Only required after running MCMC
-        with :func:`~species.fit.fit_model.FitModel.run_mcmc`.
     random : int, None
         Number of randomly selected samples. All samples are used if
         the argument is set to ``None``.
@@ -1502,9 +1350,6 @@ def plot_extinction(
     species_db = Database()
     box = species_db.get_samples(tag)
 
-    if burnin is None:
-        burnin = 0
-
     if wavel_range is None:
         wavel_range = (0.4, 10.0)
 
@@ -1513,22 +1358,9 @@ def plot_extinction(
 
     samples = box.samples
 
-    if samples.ndim == 2 and random is not None:
+    if random is not None:
         ran_index = np.random.randint(samples.shape[0], size=random)
         samples = samples[ran_index,]
-
-    elif samples.ndim == 3:
-        if burnin > samples.shape[1]:
-            raise ValueError(
-                f"The 'burnin' value is larger than the number of steps "
-                f"({samples.shape[1]}) that are made by the walkers."
-            )
-
-        samples = samples[:, burnin:, :]
-
-        ran_walker = np.random.randint(samples.shape[0], size=random)
-        ran_step = np.random.randint(samples.shape[1], size=random)
-        samples = samples[ran_walker, ran_step, :]
 
     fig = plt.figure(figsize=(6, 3))
     gridsp = mpl.gridspec.GridSpec(1, 1)

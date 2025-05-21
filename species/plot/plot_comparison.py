@@ -8,7 +8,7 @@ import configparser
 import os
 import warnings
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import h5py
 import numpy as np
@@ -470,6 +470,13 @@ def plot_grid_statistic(
     extra_param: Optional[str] = None,
     nlevels_main: int = 20,
     nlevels_extra: int = 10,
+    legend: Optional[
+        Union[
+            str,
+            dict,
+            Tuple[float, float],
+        ]
+    ] = "best",
 ) -> mpl.figure.Figure:
     """
     Function for plotting the results from the comparison with
@@ -497,18 +504,26 @@ def plot_grid_statistic(
         Output filename for the plot. The plot is shown in an
         interface window if the argument is set to ``None``.
     extra_param : str, None
-        Extra parameter to be overplotted with contours. The argument
-        can be set to any of the atmospheric parameters that were used
-        for the comparison, for example, 'teff', 'logg', 'feh', or
-        'radius'. Optionally, the argument can be set to 'ism_ext' in
-        case the ``av_points`` parameter of the
+        Extra parameter that is shown as contours, overlayed on the
+        goodness-of-fit figure. The argument can be set to any of
+        the atmospheric parameters that were used for the comparison,
+        for example, 'teff', 'logg', 'feh', or 'radius'. Optionally,
+        the argument can be set to 'ism_ext' in case the ``av_points``
+        parameter of the
         :func:`~species.fit.compare_spectra.CompareSpectra.compare_model`
-        method was used. Extra contours are not plotted if the
-        argument is set to ``None``.
+        method was used. The argument can also be set to 'log_lum' for
+        showing the bolometric luminosity. Extra contours are not
+        plotted if the argument is set to ``None``.
     nlevels_main : int
         Number of contour levels for the main plot.
     nlevels_extra : int
         Number of contour levels for the optional extra parameter.
+    legend : str, tuple, dict, None
+        Location of the legend (str or tuple(float, float))
+        or a dictionary with the ``**kwargs`` of
+        ``matplotlib.pyplot.legend``, for example
+        ``{'loc': 'upper left', 'fontsize: 12.}``. The legend is
+        not shown when the argument is set to ``None``.
 
     Returns
     -------
@@ -556,6 +571,9 @@ def plot_grid_statistic(
             coord_points.append(
                 np.array(hdf5_file[f"results/comparison/{tag}/coord_points{i}"])
             )
+
+            if dset.attrs[f"parameter{i}"] == "teff":
+                teff_idx = i
 
         object_name = dset.attrs["object_name"]
 
@@ -691,7 +709,7 @@ def plot_grid_statistic(
             goodness_fit = np.nanmin(goodness_fit, axis=tuple(ax_list))
 
         else:
-            if extra_param == "radius":
+            if extra_param in ["radius", "log_lum"]:
                 goodness_full = goodness_fit.copy()
 
                 # Select all axes beyond the 2nd axis
@@ -725,7 +743,21 @@ def plot_grid_statistic(
                                 "warning is not expected to have occurred."
                             )
 
-                        extra_map[i, j] = radius[tuple(min_idx[0])]
+                        best_radius = radius[tuple(min_idx[0])]
+                        best_teff_idx = min_idx[0][teff_idx]
+                        best_teff = coord_points[teff_idx][best_teff_idx]
+
+                        if extra_param == "radius":
+                            extra_map[i, j] = best_radius
+                        else:
+                            extra_map[i, j] = np.log10(
+                                4.0
+                                * np.pi
+                                * (best_radius * constants.R_JUP) ** 2
+                                * constants.SIGMA_SB
+                                * best_teff**4
+                                / constants.L_SUN
+                            )
 
             else:
                 extra_idx = model_param.index(extra_param)
@@ -885,7 +917,10 @@ def plot_grid_statistic(
             # manual = [(2350, 0.8), (2500, 0.8), (2600, 0.8), (2700, 0.8),
             #           (2800, 0.8), (2950, 0.8), (3100, 0.8), (3300, 0.8)]
 
-            ax.clabel(cs, cs.levels, inline=True, fontsize=8, fmt="%1.1f")
+            if extra_param == "log_lum":
+                ax.clabel(cs, cs.levels, inline=True, fontsize=8, fmt="%1.2f")
+            else:
+                ax.clabel(cs, cs.levels, inline=True, fontsize=8, fmt="%1.1f")
 
         # if extra_scaling is not None and len(coord_points[2]) > 1:
         #     ratio = np.transpose(flux_scaling[:, 0, :])/np.transpose(extra_scaling[:, 0, :, 0])
@@ -918,7 +953,14 @@ def plot_grid_statistic(
     if extra_param is not None:
         extra_label = update_labels([extra_param])[0]
         ax.plot([], [], ls="-", lw=1.2, color="white", label=extra_label)
-        ax.legend(loc="best", frameon=False, labelcolor="linecolor", fontsize=12.0)
+
+        if legend is not None:
+            if isinstance(legend, (str, tuple)):
+                ax.legend(
+                    loc=legend, frameon=False, labelcolor="linecolor", fontsize=12.0
+                )
+            else:
+                ax.legend(**legend)
 
     if output is None:
         plt.show()
@@ -985,7 +1027,7 @@ def plot_model_spectra(
         List with the parameters to include in the legend of the
         model spectra. Apart from atmospheric parameters (e.g.
         'teff', 'logg', 'radius') also parameters such as 'mass'
-        and 'luminosity' can be included. The default atmospheric
+        and 'log_lum' can be included. The default atmospheric
         parameters are included in the legend if the argument is
         set to ``None``.
 
@@ -1016,11 +1058,19 @@ def plot_model_spectra(
 
         object_name = dset.attrs["object_name"]
         n_spec_name = dset.attrs["n_spec_name"]
-        model_name = dset.attrs["model"]
         n_param = dset.attrs["n_param"]
         n_scale_spec = dset.attrs["n_scale_spec"]
         parallax = dset.attrs["parallax"]
-        n_inc_phot = dset.attrs["n_inc_phot"]
+
+        if "n_inc_phot" in dset.attrs:
+            n_inc_phot = dset.attrs["n_inc_phot"]
+        else:
+            n_inc_phot = 0
+
+        if "model_name" in dset.attrs:
+            model_name = dset.attrs["model_name"]
+        else:
+            model_name = dset.attrs["model"]
 
         spec_name = []
         for i in range(n_spec_name):

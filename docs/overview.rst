@@ -35,23 +35,25 @@ The following data and models are currently supported:
 - `Saumon & Marley (2008) <https://ui.adsabs.harvard.edu/abs/2008ApJ...689.1327S/abstract>`_
 - `Sonora Bobcat <https://zenodo.org/record/5063476>`_
 - `Sonora Cholla <https://zenodo.org/record/4450269>`_
+- `Sonora Diamondback <https://zenodo.org/records/12735103>`_
 - `Sonora Elf Owl L-type <https://zenodo.org/records/10385987>`_
 - `Sonora Elf Owl T-type <https://zenodo.org/records/10385821>`_
 - `Sonora Elf Owl Y-type <https://zenodo.org/records/10381250>`_
 
 .. tip::
-  It is also possible to add your own custom grid of model spectra with :func:`~species.data.database.Database.add_custom_model()`. Have a look at the documentation for details on the required file format.
+  It is also possible to add your own custom grid of model spectra with :func:`~species.data.database.Database.add_custom_model()`.
 
 .. tip::
-  The :func:`~species.data.database.Database.available_models()` method of the :class:`~species.data.database.Database` class can be used for getting a complete overview of all model grids, including details on the input parameters, wavelength range, :math:`T_\mathrm{eff}` range, and spectral resolution:
+  The :func:`~species.data.database.Database.available_models()` method of the :class:`~species.data.database.Database` class can be used for printing a detailed overview of all available model grids:
 
   .. code-block:: python
 
-     import species
+     from species import SpeciesInit
+     from species.data.database import Database
 
-     species.SpeciesInit()
+     SpeciesInit()
 
-     database = species.Database()
+     database = Database()
      database.available_models()
 
 **Evolutionary models**
@@ -63,7 +65,9 @@ The following data and models are currently supported:
 - `Linder et al. (2019) isochrones <https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..85L/abstract>`_
 - `Saumon & Marley (2008) isochrones <https://ui.adsabs.harvard.edu/abs/2008ApJ...689.1327S/abstract>`_
 - `Sonora Bobcat isochrones <https://zenodo.org/record/5063476>`_
-- All isochrones from the `Phoenix grids <https://phoenix.ens-lyon.fr/Grids/>`_
+- `Sonora Diamondback isochrones <https://zenodo.org/records/12735103>`_
+- `PARSEC isochrones <https://stev.oapd.inaf.it/cgi-bin/cmd>`_
+- Isochrones from the `Phoenix grids <https://phoenix.ens-lyon.fr/Grids/>`_
 
 **Spectral libraries**
 
@@ -88,9 +92,9 @@ The following data and models are currently supported:
 
 **Dust extinction**
 
-- ISM relation from `Cardelli et al. (1989) <https://ui.adsabs.harvard.edu/abs/1989ApJ...345..245C/abstract>`_
-- Extinction cross sections computed with `PyMieScatt <https://pymiescatt.readthedocs.io>`_
-- Optical constants compiled by `Mollière et al. (2019) <https://ui.adsabs.harvard.edu/abs/2019A%26A...627A..67M/abstract>`_
+- Extinction models from `dust-extinction <https://dust-extinction.readthedocs.io/en/latest/dust_extinction/choose_model.html>`_
+- Dust cross sections computed with `PyMieScatt <https://pymiescatt.readthedocs.io>`_
+- Optical constants adopted from `Mollière et al. (2019) <https://ui.adsabs.harvard.edu/abs/2019A%26A...627A..67M/abstract>`_
 
 Please give credit to the relevant references when using any of the external data in a publication. More information is available on the respective websites. Support for other datasets can be requested by creating an `issue <https://github.com/tomasstolker/species/issues>`_ on the Github page.
 

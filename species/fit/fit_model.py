@@ -13,6 +13,7 @@ import numpy as np
 
 try:
     import ultranest
+
 except:
     warnings.warn(
         "UltraNest could not be imported. Perhaps "
@@ -21,20 +22,20 @@ except:
 
 try:
     import pymultinest
+
 except:
     warnings.warn(
         "PyMultiNest could not be imported. "
-        "Perhaps because MultiNest was not build "
+        "Perhaps because MultiNest was not built "
         "and/or found at the LD_LIBRARY_PATH "
         "(Linux) or DYLD_LIBRARY_PATH (Mac)?"
     )
 
 from schwimmbad import MPIPool
 from scipy.interpolate import interp1d
-from scipy.stats import norm
+from scipy.stats import norm, truncnorm
 from typeguard import typechecked
 
-from species.core import constants
 from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_model import ReadModel
 from species.read.read_object import ReadObject
@@ -43,18 +44,16 @@ from species.read.read_filter import ReadFilter
 from species.util.convert_util import logg_to_mass
 from species.util.core_util import print_section
 from species.util.dust_util import (
-    convert_to_av,
     interp_lognorm,
     interp_powerlaw,
-    ism_extinction,
 )
 from species.util.model_util import (
     binary_to_single,
+    check_nearest_spec,
     extract_disk_param,
     apply_obs,
     powerlaw_spectrum,
 )
-
 
 warnings.filterwarnings("always", category=DeprecationWarning)
 
@@ -83,7 +82,10 @@ class FitModel:
                 str,
                 Union[
                     Optional[Tuple[Optional[float], Optional[float]]],
-                    Tuple[Optional[Tuple[Optional[float], Optional[float]]], Optional[Tuple[Optional[float], Optional[float]]]],
+                    Tuple[
+                        Optional[Tuple[Optional[float], Optional[float]]],
+                        Optional[Tuple[Optional[float], Optional[float]]],
+                    ],
                     Tuple[
                         Optional[Tuple[float, float]],
                         Optional[Tuple[float, float]],
@@ -99,6 +101,8 @@ class FitModel:
         apply_weights: Union[bool, Dict[str, Union[float, np.ndarray]]] = False,
         ext_filter: Optional[str] = None,
         normal_prior: Optional[Dict[str, Tuple[float, float]]] = None,
+        ext_model: Optional[str] = None,
+        binary_prior: bool = False,
     ) -> None:
         """
         Parameters
@@ -108,8 +112,8 @@ class FitModel:
             :func:`~species.data.database.Database.add_object` or
             :func:`~species.data.database.Database.add_companion`.
         model : str
-            Name of the atmospheric model (e.g. 'bt-settl', 'exo-rem',
-            'planck', or 'powerlaw').
+            Name of the atmospheric model (see
+            :func:`~species.data.database.Database.available_models`).
         bounds : dict(str, tuple(float, float)), None
             The boundaries that are used for the uniform or
             log-uniform priors. Mandatory parameters are
@@ -142,14 +146,14 @@ class FitModel:
 
                - Radial velocity can be included with the ``rad_vel``
                  parameter (km/s). This parameter will only be relevant
-                 if the radial velocity shift can be spectrally
-                 resolved given the instrument resolution. When
-                 including ``rad_vel``, a single RV will be fitted
-                 for all spectra. Or, it is also possible by fitting
-                 an RV for individual spectra by for example including
-                 the parameter as ``rad_vel_SPHERE`` in case the
-                 spectrum name is ``SPHERE``, that is, the name used
-                 as tag when adding the spectrum to the database with
+                 if the radial velocity shift can be detected given
+                 the instrument resolution. When including ``rad_vel``,
+                 a single RV will be fitted for all spectra. Or, it is
+                 also possible by fitting an RV for individual spectra
+                 by for example including the parameter as
+                 ``rad_vel_CRIRES`` in case the spectrum name is
+                 ``CRIRES``, that is, the name used as tag when adding
+                 the spectrum to the database with
                  :func:`~species.data.database.Database.add_object`.
 
                - Rotational broadening can be fitted by including the
@@ -160,23 +164,15 @@ class FitModel:
                  resolution. The resolution is set when adding a
                  spectrum to the database with
                  :func:`~species.data.database.Database.add_object`.
-                 Note that the broadening is applied with the
-                 `fastRotBroad <https://pyastronomy.readthedocs.io/
-                 en/latest/pyaslDoc/aslDoc/rotBroad.html#PyAstronomy.
-                 pyasl.fastRotBroad>`_ function from ``PyAstronomy``.
-                 The rotational broadening is only accurate if the
-                 wavelength range of the data is somewhat narrow.
-                 For example, when fitting a medium- or
-                 high-resolution spectrum across multiple bands
-                 (e.g. $JHK$ bands) then it is best to split up the
-                 data into the separate bands when adding them with
-                 :func:`~species.data.database.Database.add_object`.
+                 The broadening is applied with the function from
+                 `Carvalho & Johns-Krull (2023) <https://ui.adsabs.
+                 harvard.edu/abs/2023RNAAS...7...91C/abstract>`_.
                  A single broadening parameter, ``vsini``, can be
                  fitted, so it is applied for all spectra. Or, it is
                  also possible to fit the broadening for individual
                  spectra by for example including the parameter as
-                 ``vsini_SPHERE`` in case the spectrum name is
-                 ``SPHERE``, that is, the name used as tag when
+                 ``vsini_CRIRES`` in case the spectrum name is
+                 ``CRIRES``, that is, the name used as tag when
                  adding the spectrum to the database with
                  :func:`~species.data.database.Database.add_object`.
 
@@ -295,56 +291,80 @@ class FitModel:
 
             Calibration parameters:
 
-                 - For each spectrum/instrument, two optional
-                   parameters can be fitted to account for biases in
-                   the calibration: a scaling of the flux and a
-                   relative inflation of the uncertainties.
-
-                 - For example, ``bounds={'SPHERE': ((0.8, 1.2),
-                   (0., 1.))}`` if the scaling is fitted between
-                   0.8 and 1.2, and the error is inflated (relative
-                   to the sampled model fluxes) with a value
-                   between 0 and 1.
-
-                 - The dictionary key should be the same as the
-                   database tag of the spectrum. For example,
-                   ``{'SPHERE': ((0.8, 1.2), (0., 1.))}``
-                   if the spectrum is stored as ``'SPHERE'`` with
+                 - For each spectrum, a scaling of the fluxes can be
+                   fitted, to account for an inaccuracy of the
+                   absolute flux calibration. For example,
+                   ``bounds={'scaling_SPHERE': (0.8, 1.2)}`` if the
+                   scaling is fitted between 0.8 and 1.2, and the
+                   spectrum is stored as ``'SPHERE'`` with
                    :func:`~species.data.database.Database.add_object`.
 
-                 - Each of the two calibration parameters can be set to
-                   ``None`` in which case the parameter is not used. For
-                   example,
-                   ``bounds={'SPHERE': ((0.8, 1.2), None)}``.
+                 - For each spectrum, a error inflation can be fitted,
+                   to account for an underestimation of the flux
+                   uncertainties. The errors are inflated relative
+                   to the sampled model fluxes. For example,
+                   ``bounds={'error_SPHERE': (0.0, 2.0)}`` will
+                   scale each sampled model spectrum by a factor between
+                   0.0 and 2.0, and add this scaled model spectrum
+                   in quadrature to the uncertainties of the
+                   observed spectrum. In this case, applied to the
+                   spectrum that is stored as ``'SPHERE'`` with
+                   :func:`~species.data.database.Database.add_object`.
+                   This approach has been adopted from `Piette &
+                   Madhusudhan (2020) <https://ui.adsabs.harvard.edu/
+                   abs/2020MNRAS.497.5136P/abstract>`_. The error
+                   inflation parameter is :math:`x_\\mathrm{tol}` in
+                   Eq. 8 from their work.
 
-                 - The errors of the photometric fluxes can be inflated
-                   to account for underestimated error bars. The error
-                   inflation is relative to the actual flux and is
-                   either fitted separately for a filter, or a single
-                   error inflation is applied to all filters from an
-                   instrument. For the first case, the keyword in the
-                   ``bounds`` dictionary should be provided in the
-                   following format:
-                   ``'Paranal/NACO.Mp_error': (0., 1.)``. Here, the
+                 - The errors of the photometric fluxes can also be
+                   inflated, to account for an underestimated
+                   uncertainty. The errors are inflated relative
+                   to the synthetic photometry from the model. The
+                   inflation can be fitted either for individual
+                   filters, or a single error inflation is applied to
+                   all filters from an instrument. For the first case,
+                   the keyword in the ``bounds`` dictionary should be
+                   provided in the following format:
+                   ``'error_Paranal/NACO.Mp': (0., 1.)``. Here, the
                    error of the NACO :math:`M'` flux is inflated up to
-                   100 percent of the actual flux. For the second case,
+                   100 percent of the model flux. For the second case,
                    only the telescope/instrument part of the the filter
                    name should be provided in the ``bounds``
                    dictionary, so in the following format:
-                   ``'Paranal/NACO_error': (0., 1.)``. This will
-                   increase the errors of all NACO filters by the same
-                   (relative) amount.
-
-                 - No calibration parameters are fitted if the
-                   spectrum name is not included in ``bounds``.
+                   ``'error_Paranal/NACO': (0., 1.)``. This will
+                   increase the errors of all NACO photometry by the
+                   same amount relative to their model fluxes.
 
             ISM extinction parameters:
 
-                 - There are three approaches for fitting extinction.
-                   The first is with the empirical relation from
-                   `Cardelli et al. (1989)
-                   <https://ui.adsabs.harvard.edu/abs/1989ApJ...345..245C/abstract>`_
-                   for ISM extinction.
+                 - Fit the extinction with any of the models in the
+                   ``dust-extinction`` package (see `list of
+                   available models <https://dust-extinction.
+                   readthedocs.io/en/latest/dust_extinction/
+                   choose_model.html>`_). This is done by setting the
+                   the argument of ``ext_model``, for example to
+                   ``'G23'`` for using the relation from
+                   `Gordon et al. (2023) <https://ui.adsabs.harvard.
+                   edu/abs/2023ApJ...950...86G>`_.
+
+                 - The extinction is parametrized by the visual
+                   extinction, $A_V$ (``ext_av``), and optionally the
+                   reddening, R_V (``ext_rv``). If ``ext_rv`` is not
+                   provided, its value is fixed to 3.1 and not fitted.
+
+                 - The prior boundaries of ``ext_av`` and ``ext_rv``
+                   should be provided in the ``bounds`` dictionary, for
+                   example ``bounds={'ext_av': (0., 5.),
+                   'ext_rv': (1., 5.)}``.
+
+            ISM extinction parameters (DEPRECATED):
+
+                 - Fit the extinction with the relation from
+                   `Gordon et al. (2023) <https://ui.adsabs.harvard.
+                   edu/abs/2023ApJ...950...86G>`_. This relation is
+                   defined for wavelengths in the range of 0.09-32
+                   µm, so no extinction is applied to the fluxes
+                   with wavelengths outside this range.
 
                  - The extinction is parametrized by the $V$ band
                    extinction, $A_V$ (``ism_ext``), and optionally the
@@ -354,14 +374,16 @@ class FitModel:
                  - The prior boundaries of ``ism_ext`` and ``ism_red``
                    should be provided in the ``bounds`` dictionary, for
                    example ``bounds={'ism_ext': (0., 10.),
-                   'ism_red': (0., 20.)}``.
+                   'ism_red': (1., 10.)}``. It is recommended to set the
+                   minimum value of ``ism_red`` to at least 1.0 since the
+                   extinction will be negative for the infrared
+                   wavelength regime otherwise.
 
             Log-normal size distribution:
 
-                 - The second approach is fitting the extinction of a
-                   log-normal size distribution of grains with a
-                   crystalline MgSiO3 composition, and a homogeneous,
-                   spherical structure.
+                 - Fitting the extinction of a log-normal size
+                   distribution of grains with a crystalline MgSiO3
+                   composition, and a homogeneous, spherical structure.
 
                  - The size distribution is parameterized with a mean
                    geometric radius (``lognorm_radius`` in um) and a
@@ -389,10 +411,9 @@ class FitModel:
 
             Power-law size distribution:
 
-                 - The third approach is fitting the extinction of a
-                   power-law size distribution of grains, again with a
-                   crystalline MgSiO3 composition, and a homogeneous,
-                   spherical structure.
+                 - Fitting the extinction of a power-law size
+                   distribution of grains, with a crystalline MgSiO3
+                   composition, and a homogeneous, spherical structure.
 
                  - The size distribution is parameterized with a
                    maximum radius (``powerlaw_max`` in um) and a
@@ -433,9 +454,11 @@ class FitModel:
             List with spectrum names for which the covariances are
             modeled with a Gaussian process (see Wang et al. 2020).
             This option can be used if the actual covariances as
-            determined from the data are not available for the spectra
-            of ``object_name``. The parameters that will be fitted
-            are the correlation length and the fractional amplitude.
+            determined from the data are not available with a spectrum
+            that was added to the database with
+            :func:`~species.data.database.Database.add_object`).
+            The parameters that will be fitted are the correlation
+            length and the fractional amplitude.
         apply_weights : bool, dict
             Weights to be applied to the log-likelihood components of
             the spectra and photometric fluxes that are provided with
@@ -447,7 +470,9 @@ class FitModel:
             based on the FWHM of the filter profiles or the wavelength
             spacing calculated from the spectral resolution. By
             setting the argument to ``False``, there will be no
-            weighting applied.
+            weighting applied. Alternatively, a dictionary can
+            be used as argument, which includes the names and
+            weightings of spectra and/or photometric fluxes.
         ext_filter : str, None
             Filter that is associated with the (optional) extinction
             parameter, ``ism_ext``. When the argument of ``ext_filter``
@@ -471,7 +496,29 @@ class FitModel:
             ``normal_prior``. The parameter is not used if the
             argument is set to ``None``. See also the ``bounds``
             parameter for including priors with a (log-)uniform
-            distribution.
+            distribution. Setting a parameter both in ``bounds``
+            and ``normal_prior`` will create a prior from a
+            truncated normal distribution.
+        ext_model : str, None
+            Name with the extinction model from the
+            ``dust-extinction`` package (see `list of available
+            models <https://dust-extinction.readthedocs.io/en/
+            latest/dust_extinction/choose_model.html>`_). For example,
+            set the argument to ``'G23'`` to use the extinction
+            relation from `Gordon et al. (2023) <https://ui.adsabs.
+            harvard.edu/abs/2023ApJ...950...86G>`_. To use the
+            ``ext_model``, it is mandatory to add the ``ext_av``
+            parameter to the ``bounds`` dictionary for setting the
+            prior boundaries of :math:`A_V`. The reddening
+            can be optionally added to the ``bounds`` with the
+            ``ext_rv`` parameter. Otherwise, it is set to the
+            default of :math:`R_V = 3.1`.
+        binary_prior : bool
+            When fitting a binary system (i.e. two sets of atmosphere
+            parameters to spectra and/or photometry), a prior is
+            applied such that the :math:`T_\\mathrm{eff}` and
+            :math:`R` of the primary object will be larger than
+            those parameters of the secondary object.
 
         Returns
         -------
@@ -503,13 +550,16 @@ class FitModel:
         self.object = ReadObject(object_name)
         self.obj_parallax = self.object.get_parallax()
         self.binary = False
-        self.ext_filter = ext_filter
         self.param_interp = None
         self.cross_sections = None
         self.ln_z = None
         self.ln_z_error = None
         self.n_planck = 0
         self.n_disk = 0
+
+        self.binary_prior = binary_prior
+        self.ext_filter = ext_filter
+        self.ext_model = ext_model
 
         if fit_corr is None:
             self.fit_corr = []
@@ -551,6 +601,17 @@ class FitModel:
         # Models that do not require a grid interpolation
 
         self.non_interp_model = ["planck", "powerlaw"]
+
+        # Check if deprecated ism_ext parameter is used
+
+        if "ism_ext" in self.bounds:
+            warnings.warn(
+                "The use of 'ism_ext' for fitting the extinction is "
+                "deprecated. Please use the 'ext_model' parameter of "
+                "'FitModel' in combination with setting 'ext_av' in "
+                "the 'bounds' dictionary.",
+                DeprecationWarning,
+            )
 
         # Set model parameters and boundaries
 
@@ -671,7 +732,7 @@ class FitModel:
                                 warnings.warn(
                                     f"The upper bound on {key}_{i} "
                                     f"({self.bounds[f'{key}_{i}'][0]}) "
-                                    f"is larger than the lower bound "
+                                    f"is larger than the upper bound "
                                     f"from the available {self.model} "
                                     f"model grid ({bounds_grid[key][1]}). "
                                     f"The upper bound of the {key}_{i} "
@@ -685,7 +746,7 @@ class FitModel:
 
             else:
                 # Set all parameter boundaries to the grid boundaries
-                readmodel = ReadModel(self.model, None, None)
+                readmodel = ReadModel(self.model)
                 self.bounds = readmodel.get_bounds()
 
             self.modelpar = readmodel.get_parameters()
@@ -726,6 +787,14 @@ class FitModel:
                             self.bounds["ism_ext_1"] = self.bounds["ism_ext"][1]
                             del self.bounds["ism_ext"]
 
+                    if "ext_av" in self.bounds:
+                        if isinstance(self.bounds["ext_av"][0], tuple):
+                            self.modelpar.append("ext_av_0")
+                            self.modelpar.append("ext_av_1")
+                            self.bounds["ext_av_0"] = self.bounds["ext_av"][0]
+                            self.bounds["ext_av_1"] = self.bounds["ext_av"][1]
+                            del self.bounds["ext_av"]
+
                 if (
                     "parallax_0" not in self.modelpar
                     or "parallax_1" not in self.modelpar
@@ -753,6 +822,8 @@ class FitModel:
             # Add blackbody disk components
 
             if "disk_teff" in self.bounds and "disk_radius" in self.bounds:
+                teff_range = ReadModel("blackbody").get_bounds()["teff"]
+
                 if isinstance(bounds["disk_teff"], list) and isinstance(
                     bounds["disk_radius"], list
                 ):
@@ -774,6 +845,38 @@ class FitModel:
                             "disk_radius"
                         ][disk_idx]
 
+                        if self.bounds[f"disk_teff_{disk_idx}"][0] < teff_range[0]:
+                            warnings.warn(
+                                "The lower bound on the prior of "
+                                f"'disk_teff_{disk_idx}' "
+                                f"({self.bounds['disk_teff'][0]} K) is below "
+                                "the minimum value available in the blackbody "
+                                f"grid ({teff_range[0]} K). The lower bound "
+                                "is therefore adjusted to the minimum value "
+                                "from the grid."
+                            )
+
+                            self.bounds[f"disk_teff_{disk_idx}"] = (
+                                teff_range[0],
+                                self.bounds[f"disk_teff_{disk_idx}"][1],
+                            )
+
+                        if self.bounds[f"disk_teff_{disk_idx}"][1] > teff_range[1]:
+                            warnings.warn(
+                                "The upper bound on the prior of "
+                                f"'disk_teff_{disk_idx}' "
+                                f"({self.bounds['disk_teff'][1]} K) is above "
+                                "the maximum value available in the blackbody "
+                                f"grid ({teff_range[1]} K). The upper bound "
+                                "is therefore adjusted to the maximum value "
+                                "from the grid."
+                            )
+
+                            self.bounds[f"disk_teff_{disk_idx}"] = (
+                                self.bounds[f"disk_teff_{disk_idx}"][0],
+                                teff_range[1],
+                            )
+
                     del self.bounds["disk_teff"]
                     del self.bounds["disk_radius"]
 
@@ -784,6 +887,36 @@ class FitModel:
 
                     self.modelpar.append("disk_teff")
                     self.modelpar.append("disk_radius")
+
+                    if self.bounds["disk_teff"][0] < teff_range[0]:
+                        warnings.warn(
+                            "The lower bound on the prior of 'disk_teff' "
+                            f"({self.bounds['disk_teff'][0]} K) is below "
+                            "the minimum value available in the blackbody "
+                            f"grid ({teff_range[0]} K). The lower bound "
+                            "is therefore adjusted to the minimum value "
+                            "from the grid."
+                        )
+
+                        self.bounds["disk_teff"] = (
+                            teff_range[0],
+                            self.bounds["disk_teff"][1],
+                        )
+
+                    if self.bounds["disk_teff"][1] > teff_range[1]:
+                        warnings.warn(
+                            "The upper bound on the prior of 'disk_teff' "
+                            f"({self.bounds['disk_teff'][1]} K) is above "
+                            "the maximum value available in the blackbody "
+                            f"grid ({teff_range[1]} K). The upper bound "
+                            "is therefore adjusted to the maximum value "
+                            "from the grid."
+                        )
+
+                        self.bounds["disk_teff"] = (
+                            self.bounds["disk_teff"][0],
+                            teff_range[1],
+                        )
 
             # Update parameters of binary system
 
@@ -811,6 +944,9 @@ class FitModel:
         print(f"Object name: {object_name}")
         print(f"Model tag: {model}")
         print(f"Binary star: {self.binary}")
+
+        if self.binary:
+            print(f"Binary prior: {self.binary}")
 
         if self.model not in self.non_interp_model:
             print(f"Blackbody components: {self.n_disk}")
@@ -859,25 +995,57 @@ class FitModel:
             self.synphot.append(SyntheticPhotometry(filter_item))
 
             if self.model not in self.non_interp_model:
-                # Interpolate the model grid for each filter
                 print(f"Interpolating {filter_item}...", end="", flush=True)
+
+                # Check wavelength range of filter profile
+                read_filt = ReadFilter(filter_item)
+                filt_wavel = read_filt.wavelength_range()
+
+                # Check wavelength range of model spectrum
                 readmodel = ReadModel(self.model, filter_name=filter_item)
+                model_wavel = readmodel.get_wavelengths()
+
+                if filt_wavel[0] < model_wavel[0] or filt_wavel[1] > model_wavel[-1]:
+                    raise ValueError(
+                        f"The wavelength range of the {filter_item} "
+                        f"filter profile, {filt_wavel[0]:.2f}-"
+                        f"{filt_wavel[1]:.2f} um, extends beyond the "
+                        "wavelength range of the model spectrum, "
+                        f"{model_wavel[0]:.2f}-{model_wavel[-1]:.2f} "
+                        "um. Please set 'wavel_range=None' when "
+                        "adding the model grid with `add_model()' and "
+                        "optionally set the 'fit_from' and "
+                        "'extend_from' parameters for extending the "
+                        "model spectra with a Rayleigh-Jeans slope."
+                    )
+
+                # Interpolate the model grid for each filter
                 readmodel.interpolate_grid(teff_range=self.teff_range)
                 self.modelphot.append(readmodel)
+
                 print(" [DONE]")
 
             # Add parameter for error inflation
 
             instr_filt = filter_item.split(".")[0]
 
-            if f"{filter_item}_error" in self.bounds:
-                self.modelpar.append(f"{filter_item}_error")
+            if f"error_{filter_item}" in self.bounds:
+                self.modelpar.append(f"error_{filter_item}")
 
             elif (
-                f"{instr_filt}_error" in self.bounds
-                and f"{instr_filt}_error" not in self.modelpar
+                f"error_{instr_filt}" in self.bounds
+                and f"error_{instr_filt}" not in self.modelpar
             ):
-                self.modelpar.append(f"{instr_filt}_error")
+                self.modelpar.append(f"error_{instr_filt}")
+
+            elif f"log_error_{filter_item}" in self.bounds:
+                self.modelpar.append(f"log_error_{filter_item}")
+
+            elif (
+                f"log_error_{instr_filt}" in self.bounds
+                and f"log_error_{instr_filt}" not in self.modelpar
+            ):
+                self.modelpar.append(f"log_error_{instr_filt}")
 
             # Store the flux and uncertainty for each filter
 
@@ -904,6 +1072,14 @@ class FitModel:
                 del self.spectrum[spec_item]
 
             self.n_corr_par = 0
+
+            for spec_item in self.fit_corr:
+                if spec_item not in self.spectrum:
+                    warnings.warn(
+                        f"The '{spec_item}' spectrum that is set "
+                        "in 'fit_corr' does not exist in the "
+                        f"database with '{object_name}'."
+                    )
 
             for spec_item in self.spectrum:
                 if spec_item in self.fit_corr:
@@ -944,12 +1120,35 @@ class FitModel:
                 for spec_key, spec_value in self.spectrum.items():
                     print(f"\rInterpolating {spec_key}...", end="", flush=True)
 
+                    # The ReadModel class will make sure that wavelength range of
+                    # the selected subgrid fully includes the requested wavel_range
+
                     wavel_range = (
-                        0.9 * spec_value[0][0, 0],
-                        1.1 * spec_value[0][-1, 0],
+                        spec_value[0][0, 0],
+                        spec_value[0][-1, 0],
                     )
 
                     readmodel = ReadModel(self.model, wavel_range=wavel_range)
+                    model_wavel = readmodel.get_wavelengths()
+
+                    if (
+                        spec_value[0][0, 0] < model_wavel[0]
+                        or spec_value[0][-1, 0] > model_wavel[-1]
+                    ):
+                        raise ValueError(
+                            f"The wavelength range of the {spec_key} "
+                            f"spectrum, {spec_value[0][0, 0]:.2f}-"
+                            f"{spec_value[0][-1, 0]:.2f} um, extends "
+                            "beyond the wavelength range of the model "
+                            f"spectrum, {model_wavel[0]:.2f}-"
+                            f"{model_wavel[-1]:.2f} um. Please set "
+                            "'wavel_range=None' when adding the model "
+                            "grid with `add_model()' and optionally "
+                            "set the 'fit_from' and 'extend_from' "
+                            "parameters for extending the model "
+                            "spectra with a Rayleigh-Jeans slope."
+                        )
+
                     readmodel.interpolate_grid(teff_range=self.teff_range)
 
                     self.modelspec.append(readmodel)
@@ -961,31 +1160,49 @@ class FitModel:
             self.modelspec = None
             self.n_corr_par = 0
 
-        # Optional rotational broading
+        # Optional parameters, either global or for each instrument/spectrum
 
-        if "vsini" in self.bounds:
-            # Global vsin(i) parameter (km s-1)
-            self.modelpar.append("vsini")
-            self.bounds["vsini"] = (bounds["vsini"][0], bounds["vsini"][1])
+        for param_item in ["vsini", "rad_vel"]:
+            if param_item in self.bounds:
+                if self.binary:
+                    if isinstance(self.bounds[param_item][0], tuple):
+                        self.modelpar.append(f"{param_item}_0")
+                        self.modelpar.append(f"{param_item}_1")
+                        self.bounds[f"{param_item}_0"] = self.bounds[param_item][0]
+                        self.bounds[f"{param_item}_1"] = self.bounds[param_item][1]
+                        del self.bounds[param_item]
 
-        else:
-            # Instrument specific vsin(i) parameters (kms s-1)
-            for spec_item in self.spectrum:
-                if f"vsini_{spec_item}" in self.bounds:
-                    self.modelpar.append(f"vsini_{spec_item}")
+                    else:
+                        self.modelpar.append(param_item)
 
-        # Optional radial velocity
+                else:
+                    self.modelpar.append(param_item)
 
-        if "rad_vel" in self.bounds:
-            # Global RV parameter (km s-1)
-            self.modelpar.append("rad_vel")
-            self.bounds["rad_vel"] = (bounds["rad_vel"][0], bounds["rad_vel"][1])
+            else:
+                for spec_item in self.spectrum:
+                    param_spec = f"{param_item}_{spec_item}"
 
-        else:
-            # Instrument specific RV parameters (kms s-1)
-            for spec_item in self.spectrum:
-                if f"rad_vel_{spec_item}" in self.bounds:
-                    self.modelpar.append(f"rad_vel_{spec_item}")
+                    if param_spec in self.bounds:
+                        if self.binary:
+                            if isinstance(self.bounds[param_spec][0], tuple):
+                                self.modelpar.append(f"{param_spec}_0")
+                                self.modelpar.append(f"{param_spec}_1")
+
+                                self.bounds[f"{param_spec}_0"] = self.bounds[
+                                    param_spec
+                                ][0]
+
+                                self.bounds[f"{param_spec}_1"] = self.bounds[
+                                    param_spec
+                                ][1]
+
+                                del self.bounds[param_spec]
+
+                            else:
+                                self.modelpar.append(param_spec)
+
+                        else:
+                            self.modelpar.append(param_spec)
 
         # Get the parameter order if interpolate_grid is used
 
@@ -1019,51 +1236,64 @@ class FitModel:
                 print(" [DONE]")
 
             for spec_key, spec_value in self.spectrum.items():
+                # Use the wavelength range of the selected atmospheric model
+                # because the sampled blackbody spectrum will get interpolated
+                # to the wavelengths of the model spectrum instead of the data
+                spec_idx = list(self.spectrum.keys()).index(spec_key)
                 print(f"\rInterpolating {spec_key}...", end="", flush=True)
-                wavel_range = (0.9 * spec_value[0][0, 0], 1.1 * spec_value[0][-1, 0])
+                # wavel_range = (spec_value[0][0, 0], spec_value[0][-1, 0])
+                wavel_range = (
+                    self.modelspec[spec_idx].wl_points[0],
+                    self.modelspec[spec_idx].wl_points[-1],
+                )
                 readmodel = ReadModel("blackbody", wavel_range=wavel_range)
                 readmodel.interpolate_grid(teff_range=None)
                 self.diskspec.append(readmodel)
                 print(" [DONE]")
 
+        # Optional flux scaling and error inflation parameters of spectra
+
         for spec_item in self.spectrum:
-            if bounds is not None and spec_item in bounds:
-                if bounds[spec_item][0] is not None:
-                    # Add the flux scaling parameter
-                    self.modelpar.append(f"scaling_{spec_item}")
-                    self.bounds[f"scaling_{spec_item}"] = (
-                        bounds[spec_item][0][0],
-                        bounds[spec_item][0][1],
+            if f"scaling_{spec_item}" in self.bounds:
+                self.modelpar.append(f"scaling_{spec_item}")
+
+                if self.bounds[f"scaling_{spec_item}"][0] < 0.0:
+                    raise ValueError(
+                        f"The lower bound of 'scaling_{spec_item}' "
+                        "is smaller than 0. The flux scaling "
+                        "should be larger than 0."
                     )
 
-                if len(bounds[spec_item]) > 1 and bounds[spec_item][1] is not None:
-                    # Add the error inflation parameters
-                    self.modelpar.append(f"error_{spec_item}")
-                    self.bounds[f"error_{spec_item}"] = (
-                        bounds[spec_item][1][0],
-                        bounds[spec_item][1][1],
+                if self.bounds[f"scaling_{spec_item}"][1] < 0.0:
+                    raise ValueError(
+                        f"The upper bound of 'scaling_{spec_item}' "
+                        "is smaller than 0. The flux scaling "
+                        "should be larger than 0."
                     )
 
-                    if self.bounds[f"error_{spec_item}"][1] < 0.0:
-                        warnings.warn(
-                            f"The lower bound of 'error_{spec_item}' "
-                            "is smaller than 0. The error inflation "
-                            "should be given relative to the model "
-                            "fluxes so the boundaries should be "
-                            "larger than 0."
-                        )
+            if f"error_{spec_item}" in self.bounds:
+                self.modelpar.append(f"error_{spec_item}")
 
-                    if self.bounds[f"error_{spec_item}"][1] < 0.0:
-                        warnings.warn(
-                            f"The upper bound of 'error_{spec_item}' "
-                            "is smaller than 0. The error inflation "
-                            "should be given relative to the model "
-                            "fluxes so the boundaries should be "
-                            "larger than 0."
-                        )
+                if self.bounds[f"error_{spec_item}"][0] < 0.0:
+                    raise ValueError(
+                        f"The lower bound of 'error_{spec_item}' "
+                        "is smaller than 0. The error inflation "
+                        "should be given relative to the model "
+                        "fluxes so the boundaries should be "
+                        "larger than 0."
+                    )
 
-                if spec_item in self.bounds:
-                    del self.bounds[spec_item]
+                if self.bounds[f"error_{spec_item}"][1] < 0.0:
+                    raise ValueError(
+                        f"The upper bound of 'error_{spec_item}' "
+                        "is smaller than 0. The error inflation "
+                        "should be given relative to the model "
+                        "fluxes so the boundaries should be "
+                        "larger than 0."
+                    )
+
+            if f"log_error_{spec_item}" in self.bounds:
+                self.modelpar.append(f"log_error_{spec_item}")
 
         # Exctinction parameters
 
@@ -1110,6 +1340,66 @@ class FitModel:
 
             if "ism_red" in self.bounds or "ism_red" in self.normal_prior:
                 self.modelpar.append("ism_red")
+
+        elif "ism_ext" not in self.bounds and "ism_red" in self.bounds:
+            warnings.warn(
+                "The 'ism_red' parameter is set in the "
+                "bounds dictionary but the 'ism_ext' "
+                "parameter is not included. The 'ism_red' "
+                "parameter is therefore ignored since the "
+                "reddening can only be fitted in "
+                "combination with the extinction."
+            )
+
+        elif ext_model is not None:
+            self.ext_model = ext_model
+
+            if self.binary:
+                # ext_av_0 and ext_av_1 were already added to self.modelpar
+                if "ext_rv_0" in self.bounds or "ext_rv_0" in self.normal_prior:
+                    self.modelpar.append("ext_rv_0")
+
+                if "ext_rv_1" in self.bounds or "ext_rv_1" in self.normal_prior:
+                    self.modelpar.append("ext_rv_1")
+
+            else:
+                if "ext_av" in self.bounds or "ext_av" in self.normal_prior:
+                    self.modelpar.append("ext_av")
+
+                    if "ext_rv" in self.bounds or "ext_rv" in self.normal_prior:
+                        self.modelpar.append("ext_rv")
+
+                else:
+                    self.ext_model = None
+
+                    warnings.warn(
+                        "The 'ext_model' is set but the 'ext_av' "
+                        "parameter is missing in the 'bounds' "
+                        "dictionary so the 'ext_model' parameter "
+                        "will be ignored and no extinction will "
+                        "be fitted."
+                    )
+
+        elif ext_model is None:
+            if "ext_av" in self.bounds:
+                del self.bounds["ext_av"]
+
+                warnings.warn(
+                    "The 'ext_av' parameter is set in the 'bounds' "
+                    "dictionary but the 'ext_model' is not set. "
+                    "The 'ext_av' parameter will therefore be "
+                    "ignored and no extinction will be fitted."
+                )
+
+            if "ext_rv" in self.bounds:
+                del self.bounds["ext_rv"]
+
+                warnings.warn(
+                    "The 'ext_rv' parameter is set in the 'bounds' "
+                    "dictionary but the 'ext_model' is not set. "
+                    "The 'ext_rv' parameter will therefore be "
+                    "ignored and no extinction will be fitted."
+                )
 
         # Veiling parameters
 
@@ -1169,7 +1459,7 @@ class FitModel:
         for item in self.modelpar:
             print(f"   - {item}")
 
-        # Add parallax to dictionary with Gaussian priors
+        # Add parallax to dictionary with normal priors
 
         if (
             "parallax" in self.modelpar
@@ -1324,15 +1614,41 @@ class FitModel:
 
         for param_item in cube_index:
             if param_item in self.normal_prior:
-                # Normal prior
-                param_out[cube_index[param_item]] = norm.ppf(
-                    param_out[cube_index[param_item]],
-                    loc=self.normal_prior[param_item][0],
-                    scale=self.normal_prior[param_item][1],
-                )
+                if param_item in bounds:
+                    # Truncated normal prior
+
+                    # The truncation values are given in number of
+                    # standard deviations relative to the mean
+                    # of the normal distribution
+
+                    a_trunc = (
+                        bounds[param_item][0] - self.normal_prior[param_item][0]
+                    ) / self.normal_prior[param_item][1]
+
+                    b_trunc = (
+                        bounds[param_item][1] - self.normal_prior[param_item][0]
+                    ) / self.normal_prior[param_item][1]
+
+                    param_out[cube_index[param_item]] = truncnorm.ppf(
+                        param_out[cube_index[param_item]],
+                        a_trunc,
+                        b_trunc,
+                        loc=self.normal_prior[param_item][0],
+                        scale=self.normal_prior[param_item][1],
+                    )
+
+                else:
+                    # Normal prior
+
+                    param_out[cube_index[param_item]] = norm.ppf(
+                        param_out[cube_index[param_item]],
+                        loc=self.normal_prior[param_item][0],
+                        scale=self.normal_prior[param_item][1],
+                    )
 
             else:
                 # Uniform prior
+
                 param_out[cube_index[param_item]] = (
                     bounds[param_item][0]
                     + (bounds[param_item][1] - bounds[param_item][0])
@@ -1425,6 +1741,15 @@ class FitModel:
                     ):
                         return -np.inf
 
+        # Check if the primary star has a higher Teff and larger R
+
+        if self.binary and self.binary_prior:
+            if all_param["teff_1"] > all_param["teff_0"]:
+                return -np.inf
+
+            if all_param["radius_1"] > all_param["radius_0"]:
+                return -np.inf
+
         # Sort the parameters in the correct order for
         # spectrum_interp because it creates a list in
         # the order of the keys in param_dict
@@ -1445,27 +1770,70 @@ class FitModel:
 
         for prior_key, prior_value in self.normal_prior.items():
             if prior_key == "mass":
-                if "logg" in self.modelpar and "radius" in self.modelpar:
-                    mass = logg_to_mass(
-                        params[self.cube_index["logg"]],
-                        params[self.cube_index["radius"]],
-                    )
+                if "logg" in all_param and "radius" in all_param:
+                    mass = logg_to_mass(all_param["logg"], all_param["radius"])
 
-                    ln_like += -0.5 * (mass - prior_value[0]) ** 2 / prior_value[1] ** 2
+                    ln_like += (mass - prior_value[0]) ** 2 / prior_value[1] ** 2
 
                 else:
-                    if "logg" not in self.modelpar:
+                    if "logg" not in all_param:
                         warnings.warn(
                             "The 'logg' parameter is not used "
                             f"by the '{self.model}' model so "
-                            "the mass prior can not be applied."
+                            "the mass prior cannot be applied."
                         )
 
-                    elif "radius" not in self.modelpar:
+                    elif "radius" not in all_param:
                         warnings.warn(
                             "The 'radius' parameter is not fitted "
-                            "so the mass prior can not be applied."
+                            "so the mass prior cannot be applied."
                         )
+
+            elif self.binary and prior_key in ["mass_0", "mass_1"]:
+                bin_idx = prior_key[-1]
+
+                if f"logg_{bin_idx}" in all_param and f"radius_{bin_idx}" in all_param:
+                    mass = logg_to_mass(
+                        all_param[f"logg_{bin_idx}"], all_param[f"radius_{bin_idx}"]
+                    )
+
+                    ln_like += (mass - prior_value[0]) ** 2 / prior_value[1] ** 2
+
+                else:
+                    if f"logg_{bin_idx}" not in all_param:
+                        warnings.warn(
+                            f"The 'logg_{bin_idx}' parameter is not "
+                            "fitted so the mass prior can't be applied."
+                        )
+
+                    elif f"radius_{bin_idx}" not in all_param:
+                        warnings.warn(
+                            f"The 'radius_{bin_idx}' parameter is not "
+                            "fitted so the mass prior can't be applied."
+                        )
+
+            elif self.binary and prior_key == "mass_ratio":
+                if (
+                    "logg_0" in all_param
+                    and "radius_0" in all_param
+                    and "logg_1" in all_param
+                    and "radius_1" in all_param
+                ):
+                    mass_0 = logg_to_mass(all_param["logg_0"], all_param["radius_0"])
+                    mass_1 = logg_to_mass(all_param["logg_1"], all_param["radius_1"])
+
+                    ln_like += (mass_1 / mass_0 - prior_value[0]) ** 2 / prior_value[
+                        1
+                    ] ** 2
+
+                else:
+                    for param_item in ["logg_0", "logg_1", "radius_0", "radius_1"]:
+                        if param_item not in all_param:
+                            warnings.warn(
+                                f"The '{param_item}' parameter is "
+                                "not fitted so the mass_ratio prior "
+                                "can't be applied."
+                            )
 
             elif prior_key[:6] == "ratio_":
                 filter_name = prior_key[6:]
@@ -1487,6 +1855,7 @@ class FitModel:
                     model_wavel=self.flux_ratio[filter_name].wl_points,
                     model_param=all_param_0,
                     cross_sections=self.cross_sections,
+                    ext_model=self.ext_model,
                 )
 
                 phot_flux_0 = self.prior_phot[filter_name].spectrum_to_flux(
@@ -1510,6 +1879,7 @@ class FitModel:
                     model_wavel=self.flux_ratio[filter_name].wl_points,
                     model_param=all_param_1,
                     cross_sections=self.cross_sections,
+                    ext_model=self.ext_model,
                 )
 
                 phot_flux_1 = self.prior_phot[filter_name].spectrum_to_flux(
@@ -1523,7 +1893,8 @@ class FitModel:
 
                     if phot_flux_1 / phot_flux_0 < ratio_prior[0]:
                         return -np.inf
-                    elif phot_flux_1 / phot_flux_0 > ratio_prior[1]:
+
+                    if phot_flux_1 / phot_flux_0 > ratio_prior[1]:
                         return -np.inf
 
                 # Normal prior for the flux ratio
@@ -1532,17 +1903,13 @@ class FitModel:
                     ratio_prior = self.normal_prior[f"ratio_{filter_name}"]
 
                     ln_like += (
-                        -0.5
-                        * (phot_flux_1 / phot_flux_0 - ratio_prior[0]) ** 2
-                        / ratio_prior[1] ** 2
-                    )
+                        phot_flux_1 / phot_flux_0 - ratio_prior[0]
+                    ) ** 2 / ratio_prior[1] ** 2
 
             else:
                 ln_like += (
-                    -0.5
-                    * (params[self.cube_index[prior_key]] - prior_value[0]) ** 2
-                    / prior_value[1] ** 2
-                )
+                    params[self.cube_index[prior_key]] - prior_value[0]
+                ) ** 2 / prior_value[1] ** 2
 
         # Compare photometry with model
 
@@ -1584,6 +1951,7 @@ class FitModel:
                         model_wavel=self.modelphot[phot_idx].wl_points,
                         model_param=all_param_0,
                         cross_sections=self.cross_sections,
+                        ext_model=self.ext_model,
                     )
 
                     # Star 1
@@ -1603,6 +1971,7 @@ class FitModel:
                         model_wavel=self.modelphot[phot_idx].wl_points,
                         model_param=all_param_1,
                         cross_sections=self.cross_sections,
+                        ext_model=self.ext_model,
                     )
 
                     # Weighted flux of two spectra for atmospheric asymmetries
@@ -1632,6 +2001,7 @@ class FitModel:
                         model_wavel=self.modelphot[phot_idx].wl_points,
                         model_param=all_param,
                         cross_sections=self.cross_sections,
+                        ext_model=self.ext_model,
                     )
 
                 # Calculate synthetic photometry
@@ -1656,6 +2026,7 @@ class FitModel:
                         model_wavel=self.diskphot[phot_idx].wl_points,
                         model_param=disk_param,
                         cross_sections=self.cross_sections,
+                        ext_model=self.ext_model,
                     )
 
                     # Calculate synthetic photometry
@@ -1679,6 +2050,7 @@ class FitModel:
                             model_wavel=self.diskphot[phot_idx].wl_points,
                             model_param=disk_param,
                             cross_sections=self.cross_sections,
+                            ext_model=self.ext_model,
                         )
 
                         # Calculate synthetic photometry
@@ -1700,29 +2072,38 @@ class FitModel:
                 # Get the telescope/instrument name
                 instr_check = filter_name.split(".")[0]
 
-                if f"{filter_name}_error" in all_param:
+                if f"error_{filter_name}" in all_param:
                     # Inflate photometric uncertainty for filter
-                    # Scale relative to the uncertainty
-                    phot_var += (
-                        all_param[f"{filter_name}_error"] ** 2 * phot_item[1] ** 2
-                    )
+                    # Scale relative to the model flux
+                    phot_var += all_param[f"error_{filter_name}"] ** 2 * phot_flux**2
 
-                elif f"{instr_check}_error" in all_param:
+                elif f"error_{instr_check}" in all_param:
                     # Inflate photometric uncertainty for instrument
-                    # Scale relative to the uncertainty
+                    # Scale relative to the model flux
+                    phot_var += all_param[f"error_{instr_check}"] ** 2 * phot_flux**2
+
+                elif f"log_error_{filter_name}" in all_param:
+                    # Inflate photometric uncertainty for filter
+                    # Scale relative to the model flux
                     phot_var += (
-                        all_param[f"{instr_check}_error"] ** 2 * phot_item[1] ** 2
-                    )
+                        10.0 ** all_param[f"log_error_{filter_name}"]
+                    ) ** 2 * phot_flux**2
+
+                elif f"log_error_{instr_check}" in all_param:
+                    # Inflate photometric uncertainty for instrument
+                    # Scale relative to the model flux
+                    phot_var += (
+                        10.0 ** all_param[f"log_error_{instr_check}"]
+                    ) ** 2 * phot_flux**2
 
                 ln_like += (
-                    -0.5
-                    * self.weights[filter_name]
+                    self.weights[filter_name]
                     * (phot_item[0] - phot_flux) ** 2
                     / phot_var
                 )
 
                 # Only required when fitting an error inflation
-                ln_like += -0.5 * np.log(2.0 * np.pi * phot_var)
+                ln_like += np.log(2.0 * np.pi * phot_var)
 
             else:
                 for phot_idx in range(phot_item.shape[1]):
@@ -1731,56 +2112,46 @@ class FitModel:
                     # Get the telescope/instrument name
                     instr_check = filter_name.split(".")[0]
 
-                    if f"{filter_name}_error" in all_param:
+                    if f"error_{filter_name}" in all_param:
                         # Inflate photometric uncertainty for filter
-                        # Scale relative to the uncertainty
+                        # Scale relative to the model flux
                         phot_var += (
-                            all_param[f"{filter_name}_error"] ** 2
-                            * phot_item[1, phot_idx] ** 2
+                            all_param[f"error_{filter_name}"] ** 2 * phot_flux**2
                         )
 
-                    elif f"{instr_check}_error" in all_param:
+                    elif f"error_{instr_check}" in all_param:
                         # Inflate photometric uncertainty for instrument
-                        # Scale relative to the uncertainty
+                        # Scale relative to the model flux
                         phot_var += (
-                            all_param[f"{instr_check}_error"] ** 2
-                            * phot_item[1, phot_idx] ** 2
+                            all_param[f"error_{instr_check}"] ** 2 * phot_flux**2
                         )
+
+                    elif f"log_error_{filter_name}" in all_param:
+                        # Inflate photometric uncertainty for filter
+                        # Scale relative to the model flux
+                        phot_var += (
+                            10.0 ** all_param[f"log_error_{filter_name}"]
+                        ) ** 2 * phot_flux**2
+
+                    elif f"log_error_{instr_check}" in all_param:
+                        # Inflate photometric uncertainty for instrument
+                        # Scale relative to the model flux
+                        phot_var += (
+                            10.0 ** all_param[f"log_error_{instr_check}"]
+                        ) ** 2 * phot_flux**2
 
                     ln_like += (
-                        -0.5
-                        * self.weights[filter_name]
+                        self.weights[filter_name]
                         * (phot_item[0, phot_idx] - phot_flux) ** 2
                         / phot_var
                     )
 
                     # Only required when fitting an error inflation
-                    ln_like += -0.5 * np.log(2.0 * np.pi * phot_var)
+                    ln_like += np.log(2.0 * np.pi * phot_var)
 
         # Compare spectra with model
 
         for spec_idx, spec_item in enumerate(self.spectrum.keys()):
-            # Set rotational broadening
-
-            if "vsini" in self.modelpar:
-                rot_broad = params[self.cube_index["vsini"]]
-
-            elif f"vsini_{spec_item}" in self.modelpar:
-                rot_broad = params[self.cube_index[f"vsini_{spec_item}"]]
-
-            else:
-                rot_broad = None
-
-            # Set radial velocity
-
-            if "rad_vel" in self.modelpar:
-                rad_vel = params[self.cube_index["rad_vel"]]
-
-            elif f"rad_vel_{spec_item}" in self.modelpar:
-                rad_vel = params[self.cube_index[f"rad_vel_{spec_item}"]]
-
-            else:
-                rad_vel = None
 
             if self.model == "planck":
                 # Calculate a blackbody spectrum from the sampled parameters
@@ -1811,7 +2182,35 @@ class FitModel:
                         list(param_0.values())
                     )[0]
 
-                    # Apply extinction and flux scaling
+                    # Set rotational broadening
+
+                    if "vsini" in self.modelpar:
+                        rot_broad_0 = params[self.cube_index["vsini"]]
+
+                    elif "vsini_0" in self.modelpar:
+                        rot_broad_0 = params[self.cube_index["vsini_0"]]
+
+                    elif f"vsini_{spec_item}_0" in self.modelpar:
+                        rot_broad_0 = params[self.cube_index[f"vsini_{spec_item}_0"]]
+
+                    else:
+                        rot_broad_0 = None
+
+                    # Set radial velocity
+
+                    if "rad_vel" in self.modelpar:
+                        rad_vel_0 = params[self.cube_index["rad_vel"]]
+
+                    elif "rad_vel_0" in self.modelpar:
+                        rad_vel_0 = params[self.cube_index["rad_vel_0"]]
+
+                    elif f"rad_vel_{spec_item}_0" in self.modelpar:
+                        rad_vel_0 = params[self.cube_index[f"rad_vel_{spec_item}_0"]]
+
+                    else:
+                        rad_vel_0 = None
+
+                    # Apply extinction, flux scaling, vsin(i), and RV
 
                     all_param_0 = binary_to_single(all_param, 0)
 
@@ -1820,6 +2219,9 @@ class FitModel:
                         model_wavel=self.modelspec[spec_idx].wl_points,
                         model_param=all_param_0,
                         cross_sections=self.cross_sections,
+                        rot_broad=rot_broad_0,
+                        rad_vel=rad_vel_0,
+                        ext_model=self.ext_model,
                     )
 
                     # Star 1
@@ -1830,7 +2232,35 @@ class FitModel:
                         list(param_1.values())
                     )[0]
 
-                    # Apply extinction and flux scaling
+                    # Set rotational broadening
+
+                    if "vsini" in self.modelpar:
+                        rot_broad_1 = params[self.cube_index["vsini"]]
+
+                    elif "vsini_1" in self.modelpar:
+                        rot_broad_1 = params[self.cube_index["vsini_1"]]
+
+                    elif f"vsini_{spec_item}_1" in self.modelpar:
+                        rot_broad_1 = params[self.cube_index[f"vsini_{spec_item}_1"]]
+
+                    else:
+                        rot_broad_1 = None
+
+                    # Set radial velocity
+
+                    if "rad_vel" in self.modelpar:
+                        rad_vel_1 = params[self.cube_index["rad_vel"]]
+
+                    elif "rad_vel_1" in self.modelpar:
+                        rad_vel_1 = params[self.cube_index["rad_vel_1"]]
+
+                    elif f"rad_vel_{spec_item}_1" in self.modelpar:
+                        rad_vel_1 = params[self.cube_index[f"rad_vel_{spec_item}_1"]]
+
+                    else:
+                        rad_vel_1 = None
+
+                    # Apply extinction, flux scaling, vsin(i), and RV
 
                     all_param_1 = binary_to_single(all_param, 1)
 
@@ -1839,6 +2269,9 @@ class FitModel:
                         model_wavel=self.modelspec[spec_idx].wl_points,
                         model_param=all_param_1,
                         cross_sections=self.cross_sections,
+                        rot_broad=rot_broad_1,
+                        rad_vel=rad_vel_1,
+                        ext_model=self.ext_model,
                     )
 
                     # Weighted flux of two spectra for atmospheric asymmetries
@@ -1854,19 +2287,44 @@ class FitModel:
                         model_flux = model_flux_0 + model_flux_1
 
                 else:
+                    # Set rotational broadening
+
+                    if "vsini" in self.modelpar:
+                        rot_broad = params[self.cube_index["vsini"]]
+
+                    elif f"vsini_{spec_item}" in self.modelpar:
+                        rot_broad = params[self.cube_index[f"vsini_{spec_item}"]]
+
+                    else:
+                        rot_broad = None
+
+                    # Set radial velocity
+
+                    if "rad_vel" in self.modelpar:
+                        rad_vel = params[self.cube_index["rad_vel"]]
+
+                    elif f"rad_vel_{spec_item}" in self.modelpar:
+                        rad_vel = params[self.cube_index[f"rad_vel_{spec_item}"]]
+
+                    else:
+                        rad_vel = None
+
                     # Interpolate model spectrum
 
                     model_flux = self.modelspec[spec_idx].spectrum_interp(
                         list(param_dict.values())
                     )[0]
 
-                    # Apply extinction and flux scaling
+                    # Apply extinction, flux scaling, vsin(i), and RV
 
                     model_flux = apply_obs(
                         model_param=all_param,
                         model_flux=model_flux,
                         model_wavel=self.modelspec[spec_idx].wl_points,
                         cross_sections=self.cross_sections,
+                        rot_broad=rot_broad,
+                        rad_vel=rad_vel,
+                        ext_model=self.ext_model,
                     )
 
                 # Add blackbody disk components
@@ -1888,6 +2346,7 @@ class FitModel:
                             model_flux=flux_tmp,
                             model_wavel=disk_wavel,
                             cross_sections=self.cross_sections,
+                            ext_model=self.ext_model,
                         )
 
                     elif self.n_disk > 1:
@@ -1909,6 +2368,7 @@ class FitModel:
                                 model_flux=flux_tmp,
                                 model_wavel=disk_wavel,
                                 cross_sections=self.cross_sections,
+                                ext_model=self.ext_model,
                             )
 
                     # Interpolate blackbody spectrum to the atmosphere spectrum
@@ -1916,15 +2376,13 @@ class FitModel:
                     flux_interp = interp1d(disk_wavel, disk_flux)
                     model_flux += flux_interp(self.modelspec[spec_idx].wl_points)
 
-            # Extinction and flux scaling have already been applied
+            # Extinction, flux scaling, vsin(i), and RV have already been applied
 
             model_flux = apply_obs(
                 model_flux=model_flux,
                 model_wavel=self.modelspec[spec_idx].wl_points,
                 data_wavel=self.spectrum[spec_item][0][:, 0],
                 spec_res=self.spectrum[spec_item][3],
-                rot_broad=rot_broad,
-                rad_vel=rad_vel,
             )
 
             # Optional flux offset
@@ -1948,7 +2406,7 @@ class FitModel:
             #
             #         model_flux = all_param["veil_a"] * model_flux + veil_flux
 
-            # Optionally scale the data to account for calibration
+            # Optional flux scaling to account for calibration inaccuracy
 
             if f"scaling_{spec_item}" in all_param:
                 spec_scaling = all_param[f"scaling_{spec_item}"]
@@ -1956,47 +2414,63 @@ class FitModel:
                 spec_scaling = 1.0
 
             data_flux = spec_scaling * self.spectrum[spec_item][0][:, 1]
+            data_var = spec_scaling**2 * self.spectrum[spec_item][0][:, 2] ** 2
 
-            # Optionally inflate the data uncertainties
+            # Optional variance inflation (see Piette & Madhusudhan 2020)
 
             if f"error_{spec_item}" in all_param:
-                # Variance with error inflation (see Piette & Madhusudhan 2020)
-                data_var = (
-                    self.spectrum[spec_item][0][:, 2] ** 2
-                    + (all_param[f"error_{spec_item}"] * model_flux) ** 2
-                )
-            else:
-                # Variance without error inflation
-                data_var = self.spectrum[spec_item][0][:, 2] ** 2
+                data_var += (all_param[f"error_{spec_item}"] * model_flux) ** 2
+
+            elif f"log_error_{spec_item}" in all_param:
+                data_var += (
+                    10.0 ** all_param[f"log_error_{spec_item}"] * model_flux
+                ) ** 2
 
             # Select the inverted covariance matrix
 
             if self.spectrum[spec_item][2] is not None:
-                if f"error_{spec_item}" in all_param:
+                if (
+                    f"error_{spec_item}" in all_param
+                    or f"log_error_{spec_item}" in all_param
+                ):
                     # Ratio of the inflated and original uncertainties
-                    sigma_ratio = np.sqrt(data_var) / self.spectrum[spec_item][0][:, 2]
+                    sigma_ratio = np.sqrt(data_var) / (
+                        spec_scaling * self.spectrum[spec_item][0][:, 2]
+                    )
                     sigma_j, sigma_i = np.meshgrid(sigma_ratio, sigma_ratio)
 
                     # Calculate the inverted matrix of the inflated covariances
                     data_cov_inv = np.linalg.inv(
-                        self.spectrum[spec_item][1] * sigma_i * sigma_j
+                        spec_scaling**2
+                        * sigma_i
+                        * sigma_j
+                        * self.spectrum[spec_item][1]
                     )
 
                 else:
-                    # Use the inverted covariance matrix directly
-                    data_cov_inv = self.spectrum[spec_item][2]
+                    if spec_scaling == 1.0:
+                        # Use the inverted covariance matrix directly
+                        data_cov_inv = self.spectrum[spec_item][2]
+                    else:
+                        # Apply flux scaling to covariance matrix
+                        # and then invert the covariance matrix
+                        data_cov_inv = np.linalg.inv(
+                            spec_scaling**2 * self.spectrum[spec_item][1]
+                        )
 
             # Calculate the log-likelihood
 
             if self.spectrum[spec_item][2] is not None:
                 # Use the inverted covariance matrix
 
-                ln_like += -0.5 * np.dot(
-                    self.weights[spec_item] * (data_flux - model_flux),
-                    np.dot(data_cov_inv, data_flux - model_flux),
+                ln_like += (
+                    self.weights[spec_item]
+                    * (data_flux - model_flux)
+                    @ data_cov_inv
+                    @ (data_flux - model_flux)
                 )
 
-                ln_like += -0.5 * np.nansum(np.log(2.0 * np.pi * data_var))
+                ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
 
             else:
                 if spec_item in self.fit_corr:
@@ -2019,29 +2493,27 @@ class FitModel:
                         + (1.0 - corr_amp**2) * np.eye(wavel.shape[0]) * error_i**2
                     )
 
-                    dot_tmp = np.dot(
-                        self.weights[spec_item] * (data_flux - model_flux),
-                        np.dot(np.linalg.inv(cov_matrix), data_flux - model_flux),
+                    ln_like += (
+                        self.weights[spec_item]
+                        * (data_flux - model_flux)
+                        @ np.linalg.inv(cov_matrix)
+                        @ (data_flux - model_flux)
                     )
 
-                    ln_like += -0.5 * dot_tmp
-                    ln_like += -0.5 * np.nansum(np.log(2.0 * np.pi * data_var))
+                    ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
 
                 else:
                     # Calculate the log-likelihood without a covariance matrix
 
-                    lnlike_tmp = (
-                        -0.5
-                        * self.weights[spec_item]
+                    ln_like += np.nansum(
+                        self.weights[spec_item]
                         * (data_flux - model_flux) ** 2
                         / data_var
                     )
 
-                    lnlike_tmp += -0.5 * np.log(2.0 * np.pi * data_var)
+                    ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
 
-                    ln_like += np.nansum(lnlike_tmp)
-
-        return ln_like
+        return -0.5 * ln_like
 
     @typechecked
     def _create_attr_dict(self):
@@ -2057,12 +2529,15 @@ class FitModel:
         """
 
         attr_dict = {
-            "spec_type": "model",
-            "spec_name": self.model,
+            "model_type": "atmosphere",
+            "model_name": self.model,
             "ln_evidence": (self.ln_z, self.ln_z_error),
             "parallax": self.obj_parallax[0],
             "binary": self.binary,
         }
+
+        if self.ext_model is not None:
+            attr_dict["ext_model"] = self.ext_model
 
         if self.ext_filter is not None:
             attr_dict["ext_filter"] = self.ext_filter
@@ -2083,7 +2558,7 @@ class FitModel:
         Function to run the ``PyMultiNest`` wrapper of the
         ``MultiNest`` sampler. While ``PyMultiNest`` can be
         installed with ``pip`` from the PyPI repository,
-        ``MultiNest`` has to to be build manually. See the
+        ``MultiNest`` has to to be built manually. See the
         `PyMultiNest documentation <http://johannesbuchner.
         github.io/PyMultiNest/install.html>`_. The library
         path of ``MultiNest`` should be set to the
@@ -2185,8 +2660,9 @@ class FitModel:
             from mpi4py import MPI
 
             mpi_rank = MPI.COMM_WORLD.Get_rank()
+            MPI.COMM_WORLD.Barrier()
 
-        except ModuleNotFoundError:
+        except ImportError:
             mpi_rank = 0
 
         # Create the output folder if required
@@ -2257,7 +2733,9 @@ class FitModel:
 
         # Create the Analyzer object
         analyzer = pymultinest.analyse.Analyzer(
-            len(self.modelpar), outputfiles_basename=output
+            len(self.modelpar),
+            outputfiles_basename=output,
+            verbose=False,
         )
 
         # Get a dictionary with the ln(Z) and its errors, the
@@ -2265,24 +2743,24 @@ class FitModel:
         # the parameter posteriors
         sampling_stats = analyzer.get_stats()
 
-        # Nested sampling global log-evidence
+        # Nested sampling log-evidence
         self.ln_z = sampling_stats["nested sampling global log-evidence"]
         self.ln_z_error = sampling_stats["nested sampling global log-evidence error"]
         print(
-            f"\nNested sampling global log-evidence: {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
+            f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
         )
 
-        # Nested importance sampling global log-evidence
+        # Nested importance sampling log-evidence
         self.imp_ln_z = sampling_stats["nested importance sampling global log-evidence"]
         self.imp_ln_z_error = sampling_stats[
             "nested importance sampling global log-evidence error"
         ]
         print(
-            "Nested importance sampling global log-evidence: "
+            "log-evidence (importance sampling) = "
             f"{self.imp_ln_z:.2f} +/- {self.imp_ln_z_error:.2f}"
         )
 
-        # Get the maximum likelihood sample
+        # Get the sample with the maximum likelihood
 
         best_params = analyzer.get_best_fit()
         max_lnlike = best_params["log_likelihood"]
@@ -2290,14 +2768,35 @@ class FitModel:
         print("\nSample with the maximum likelihood:")
         print(f"   - Log-likelihood = {max_lnlike:.2f}")
 
+        param_check = {}
         for param_idx, param_item in enumerate(best_params["parameters"]):
+            param_check[self.modelpar[param_idx]] = param_item
             if -0.1 < param_item < 0.1:
                 print(f"   - {self.modelpar[param_idx]} = {param_item:.2e}")
             else:
                 print(f"   - {self.modelpar[param_idx]} = {param_item:.2f}")
 
+        # Check nearest grid points
+
+        for param_key, param_value in self.fix_param.items():
+            param_check[param_key] = param_value
+
+        if self.binary:
+            param_0 = binary_to_single(param_check, 0)
+            check_nearest_spec(self.model, param_0)
+
+            param_1 = binary_to_single(param_check, 1)
+            check_nearest_spec(self.model, param_1)
+
+        else:
+            check_nearest_spec(self.model, param_check)
+
         # Get the posterior samples
+
         post_samples = analyzer.get_equal_weighted_posterior()
+
+        # Create list with the spectrum labels that are used
+        # for fitting an additional scaling parameter
 
         spec_labels = []
         for spec_item in self.spectrum:
@@ -2311,10 +2810,10 @@ class FitModel:
 
         # Adding the fixed parameters to the samples
 
-        for key, value in self.fix_param.items():
-            self.modelpar.append(key)
+        for param_key, param_value in self.fix_param.items():
+            self.modelpar.append(param_key)
 
-            app_param = np.full(samples.shape[0], value)
+            app_param = np.full(samples.shape[0], param_value)
             app_param = app_param[..., np.newaxis]
 
             samples = np.append(samples, app_param, axis=1)
@@ -2325,8 +2824,9 @@ class FitModel:
             from mpi4py import MPI
 
             mpi_rank = MPI.COMM_WORLD.Get_rank()
+            MPI.COMM_WORLD.Barrier()
 
-        except ModuleNotFoundError:
+        except ImportError:
             mpi_rank = 0
 
         # Add samples to the database
@@ -2441,8 +2941,9 @@ class FitModel:
             from mpi4py import MPI
 
             mpi_rank = MPI.COMM_WORLD.Get_rank()
+            MPI.COMM_WORLD.Barrier()
 
-        except ModuleNotFoundError:
+        except ImportError:
             mpi_rank = 0
 
         # Create the output folder if required
@@ -2490,7 +2991,7 @@ class FitModel:
             ln_like = self._lnlike_func(params)
 
             if not np.isfinite(ln_like):
-                # UltraNest can not handle np.inf in the likelihood
+                # UltraNest cannot handle np.inf in the likelihood
                 ln_like = -1e100
 
             return ln_like
@@ -2526,7 +3027,7 @@ class FitModel:
 
         self.ln_z = result["logz"]
         self.ln_z_error = result["logzerr"]
-        print(f"\nLog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}")
+        print(f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}")
 
         # Best-fit parameters
 
@@ -2536,20 +3037,40 @@ class FitModel:
             mean = np.mean(result["samples"][:, param_idx])
             sigma = np.std(result["samples"][:, param_idx])
 
-            print(f"   - {param_item} = {mean:.2e} +/- {sigma:.2e}")
+            if -0.1 < mean < 0.1:
+                print(f"   - {param_item} = {mean:.2e} +/- {sigma:.2e}")
+            else:
+                print(f"   - {param_item} = {mean:.2f} +/- {sigma:.2f}")
 
-        # Get the maximum likelihood sample
+        # Get the sample with the maximum likelihood
 
         max_lnlike = result["maximum_likelihood"]["logl"]
 
         print("\nSample with the maximum likelihood:")
         print(f"   - Log-likelihood = {max_lnlike:.2f}")
 
-        for lnlike_idx, lnlike_item in enumerate(result["maximum_likelihood"]["point"]):
-            if -0.1 < lnlike_item < 0.1:
-                print(f"   - {self.modelpar[lnlike_idx]} = {lnlike_item:.2e}")
+        param_check = {}
+        for param_idx, param_item in enumerate(result["maximum_likelihood"]["point"]):
+            param_check[self.modelpar[param_idx]] = param_item
+            if -0.1 < param_item < 0.1:
+                print(f"   - {self.modelpar[param_idx]} = {param_item:.2e}")
             else:
-                print(f"   - {self.modelpar[lnlike_idx]} = {lnlike_item:.2f}")
+                print(f"   - {self.modelpar[param_idx]} = {param_item:.2f}")
+
+        # Check nearest grid points
+
+        for param_key, param_value in self.fix_param.items():
+            param_check[param_key] = param_value
+
+        if self.binary:
+            param_0 = binary_to_single(param_check, 0)
+            check_nearest_spec(self.model, param_0)
+
+            param_1 = binary_to_single(param_check, 1)
+            check_nearest_spec(self.model, param_1)
+
+        else:
+            check_nearest_spec(self.model, param_check)
 
         # Create a list with scaling labels
 
@@ -2565,10 +3086,10 @@ class FitModel:
 
         # Adding the fixed parameters to the samples
 
-        for key, value in self.fix_param.items():
-            self.modelpar.append(key)
+        for param_key, param_value in self.fix_param.items():
+            self.modelpar.append(param_key)
 
-            app_param = np.full(samples.shape[0], value)
+            app_param = np.full(samples.shape[0], param_value)
             app_param = app_param[..., np.newaxis]
 
             samples = np.append(samples, app_param, axis=1)
@@ -2579,8 +3100,9 @@ class FitModel:
             from mpi4py import MPI
 
             mpi_rank = MPI.COMM_WORLD.Get_rank()
+            MPI.COMM_WORLD.Barrier()
 
-        except ModuleNotFoundError:
+        except ImportError:
             mpi_rank = 0
 
         # Add samples to the database
@@ -2620,9 +3142,9 @@ class FitModel:
         mpi_pool: bool = False,
     ) -> None:
         """
-        Function for running the atmospheric retrieval. The parameter
-        estimation and computation of the marginalized likelihood (i.e.
-        model evidence), is done with ``Dynesty``.
+        Function for running the fit with a grid of model spectra.
+        The parameter estimation and computation of the marginalized
+        likelihood (i.e. model evidence), are done with ``Dynesty``.
 
         When using MPI, it is also required to install ``mpi4py`` (e.g.
         ``pip install mpi4py``), otherwise an error may occur when the
@@ -2684,8 +3206,9 @@ class FitModel:
             from mpi4py import MPI
 
             mpi_rank = MPI.COMM_WORLD.Get_rank()
+            MPI.COMM_WORLD.Barrier()
 
-        except ModuleNotFoundError:
+        except ImportError:
             mpi_rank = 0
 
         # Create the output folder if required
@@ -2699,7 +3222,7 @@ class FitModel:
 
         print()
 
-        out_basename = os.path.join(output, "retrieval_")
+        out_basename = os.path.join(output, "")
 
         if not mpi_pool:
             if n_pool is not None:
@@ -2890,16 +3413,15 @@ class FitModel:
         print(f"Storing samples: {out_file}")
         np.savetxt(out_file, np.c_[samples, ln_prob])
 
-        # Nested sampling global log-evidence
-        # TODO check if selecting the last index is correct
+        # Nested sampling log-evidence
 
         self.ln_z = results.logz[-1]
         self.ln_z_error = results.logzerr[-1]
         print(
-            f"\nNested sampling log-evidence: {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
+            f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
         )
 
-        # Get the maximum likelihood sample
+        # Get the sample with the maximum likelihood
 
         max_idx = np.argmax(ln_prob)
         max_lnlike = ln_prob[max_idx]
@@ -2908,11 +3430,30 @@ class FitModel:
         print("\nSample with the maximum likelihood:")
         print(f"   - Log-likelihood = {max_lnlike:.2f}")
 
+        param_check = {}
         for param_idx, param_item in enumerate(best_params):
+            param_check[self.modelpar[param_idx]] = param_item
             if -0.1 < param_item < 0.1:
                 print(f"   - {self.modelpar[param_idx]} = {param_item:.2e}")
             else:
                 print(f"   - {self.modelpar[param_idx]} = {param_item:.2f}")
+
+        # Check nearest grid points
+
+        for param_key, param_value in self.fix_param.items():
+            param_check[param_key] = param_value
+
+        if self.binary:
+            param_0 = binary_to_single(param_check, 0)
+            check_nearest_spec(self.model, param_0)
+
+            param_1 = binary_to_single(param_check, 1)
+            check_nearest_spec(self.model, param_1)
+
+        else:
+            check_nearest_spec(self.model, param_check)
+
+        # Create a list with scaling labels
 
         spec_labels = []
         for spec_item in self.spectrum:
@@ -2921,13 +3462,23 @@ class FitModel:
 
         # Adding the fixed parameters to the samples
 
-        for key, value in self.fix_param.items():
-            self.modelpar.append(key)
+        for param_key, param_value in self.fix_param.items():
+            self.modelpar.append(param_key)
 
-            app_param = np.full(samples.shape[0], value)
+            app_param = np.full(samples.shape[0], param_value)
             app_param = app_param[..., np.newaxis]
 
             samples = np.append(samples, app_param, axis=1)
+
+        # Get the MPI rank of the process
+
+        try:
+            from mpi4py import MPI
+
+            mpi_rank = MPI.COMM_WORLD.Get_rank()
+
+        except ImportError:
+            mpi_rank = 0
 
         # Add samples to the database
 

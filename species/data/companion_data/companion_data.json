@@ -1,6 +1,53 @@
 {
+    "AF Lep b": {
+        "simbad": "V* AF Lep",
+        "gaia_dr3": 3009908378049913216,
+        "parallax": [
+            37.2539,
+            0.0195
+        ],
+        "app_mag": {
+            "Paranal/SPHERE.IRDIS_D_H23_2": [
+                17.50,
+                0.13
+            ],
+            "Paranal/SPHERE.IRDIS_D_K12_1": [
+                16.70,
+                0.09
+            ],
+            "Paranal/SPHERE.IRDIS_D_K12_2": [
+                16.85,
+                0.12
+            ]
+        },
+        "semi_major": [
+            9.3,
+            -1.8,
+            2.4
+        ],
+        "mass_star": [
+            1.29,
+            0.20
+        ],
+        "mass_companion": [
+            4.3,
+            2.9
+        ],
+        "accretion": false,
+        "age": [
+            24.0,
+            -3.0,
+            3.0
+        ],
+        "references": [
+            "Bell et al. 2015",
+            "De Rosa et al. 2023",
+            "Gaia Early Data Release 3"
+        ]
+    },
     "beta Pic b": {
         "simbad": "beta Pic",
+        "gaia_dr3": 4792774797545800832,
         "parallax": [
             50.9307,
             0.1482
@@ -44,8 +91,9 @@
             ]
         },
         "semi_major": [
-            10.31,
-            0.11
+            9.90,
+            -0.05,
+            0.05
         ],
         "mass_star": [
             1.83,
@@ -56,18 +104,26 @@
             2.7
         ],
         "accretion": false,
+        "age": [
+            18.5,
+            -2.4,
+            2.0
+        ],
         "references": [
             "Bonnefoy et al. 2011",
             "Currie et al. 2013",
             "Gaia Early Data Release 3",
             "Males et al. 2014",
-            "Mirek Brandt et al. 2021",
+            "Brandt et al. 2021",
+            "Miret-Roig et al. 2020",
+            "Nowak et al. 2020",
             "Stolker et al. 2019",
             "Stolker et al. 2020a"
         ]
     },
     "beta Pic c": {
         "simbad": "beta Pic",
+        "gaia_dr3": 4792774797545800832,
         "parallax": [
             50.9307,
             0.1482
@@ -79,8 +135,9 @@
             ]
         },
         "semi_major": [
-            2.75,
-            0.04
+            2.72,
+            -0.02,
+            0.02
         ],
         "mass_star": [
             1.83,
@@ -91,14 +148,21 @@
             1.1
         ],
         "accretion": false,
+        "age": [
+            18.5,
+            -2.4,
+            2.0
+        ],
         "references": [
             "Gaia Early Data Release 3",
-            "Mirek Brandt et al. 2021",
+            "Brandt et al. 2021",
+            "Miret-Roig et al. 2020",
             "Nowak et al. 2020"
         ]
     },
     "HIP 65426 b": {
         "simbad": "HIP 65426",
+        "gaia_dr3": 6070080754075553792,
         "parallax": [
             9.3031,
             0.0346
@@ -134,8 +198,9 @@
             ]
         },
         "semi_major": [
-            110.0,
-            45.0
+            62.2,
+            -7.2,
+            14.7
         ],
         "mass_star": [
             1.96,
@@ -146,7 +211,13 @@
             1.8
         ],
         "accretion": false,
+        "age": [
+            14.0,
+            4.0,
+            4.0
+        ],
         "references": [
+            "Blunt et al. 2023",
             "Chauvin et al. 2017",
             "Cheetham et al. 2019",
             "Gaia Early Data Release 3",
@@ -154,8 +225,41 @@
             "Stolker et al. 2020a"
         ]
     },
+    "HIP 99770 b": {
+        "simbad": "* b03 Cyg",
+        "gaia_dr3": 2060523518197844608,
+        "parallax": [
+            24.5456,
+            0.0911
+        ],
+        "semi_major": [
+            16.9,
+            -1.8,
+            3.4
+        ],
+        "mass_star": [
+            1.85,
+            0.19
+        ],
+        "mass_companion": [
+            16.1,
+            -5.0,
+            5.4
+        ],
+        "accretion": false,
+        "age": [
+            45.0,
+            -5.0,
+            5.0
+        ],
+        "references": [
+            "Currie et al. 2023",
+            "Zuckerman 2019"
+        ]
+    },
     "51 Eri b": {
         "simbad": "51 Eri",
+        "gaia_dr3": 3205095125321700480,
         "parallax": [
             33.439,
             0.0777
@@ -189,14 +293,19 @@
                 16.2,
                 0.11
             ],
+            "JWST/NIRCAM.F410M": [
+                15.8,
+                0.10
+            ],
             "Keck/NIRC2.Ms": [
                 16.1,
                 0.5
             ]
         },
         "semi_major": [
-            12.0,
-            4.0
+            10.4,
+            -1.1,
+            0.8
         ],
         "mass_star": [
             1.75,
@@ -207,9 +316,17 @@
             4.9
         ],
         "accretion": false,
+        "age": [
+            20.0,
+            6.0,
+            6.0
+        ],
         "references": [
+            "Balmer et al. 2025b",
+            "Dupuy et al. 2022",
             "Gaia Early Data Release 3",
             "Maire et al. 2019",
+            "Macintosh et al. 2015",
             "Rajan et al. 2017",
             "Samland et al. 2017",
             "Simon & Schaefer 2011"
@@ -217,6 +334,7 @@
     },
     "HR 8799 b": {
         "simbad": "HR 8799",
+        "gaia_dr3": 2832463659640297472,
         "parallax": [
             24.462,
             0.0455
@@ -265,11 +383,22 @@
             "Keck/NIRC2.Ms": [
                 16.05,
                 0.3
-            ]
+            ],
+            "JWST/NIRCAM.F182M": [18.66, 0.11],
+            "JWST/NIRCAM.F200W": [17.76, 0.06],
+            "JWST/NIRCAM.F210M": [17.39, 0.05],
+            "JWST/NIRCAM.F250M": [18.19, 0.17],
+            "JWST/NIRCAM.F300M": [17.37, 0.04],
+            "JWST/NIRCAM.F335M": [16.20, 0.05],
+            "JWST/NIRCAM.F410M": [15.25, 0.04],
+            "JWST/NIRCAM.F430M": [16.04, 0.10],
+            "JWST/NIRCAM.F460M": [16.01, 0.13]
+
         },
         "semi_major": [
-            69.5,
-            9.3
+            71.3,
+            -0.2,
+            0.2
         ],
         "mass_star": [
             1.52,
@@ -280,20 +409,28 @@
             0.5
         ],
         "accretion": false,
+        "age": [
+            42.0,
+            -16.0,
+            14.0
+        ],
         "references": [
             "Baines et al. 2012",
+            "Balmer et al. 2025b",
             "Currie et al. 2011",
             "Currie et al. 2012",
             "Currie et al. 2014",
             "Gaia Early Data Release 3",
             "Galicher et al. 2011",
             "Marois et al. 2010",
+            "Brandt et al. 2021",
             "Wang et al. 2018",
             "Zurlo et al. 2016"
         ]
     },
     "HR 8799 c": {
         "simbad": "HR 8799",
+        "gaia_dr3": 2832463659640297472,
         "parallax": [
             24.462,
             0.0455
@@ -338,11 +475,20 @@
             "Keck/NIRC2.Ms": [
                 15.03,
                 0.14
-            ]
+            ],
+            "JWST/NIRCAM.F200W": [17.46, 0.13],
+            "JWST/NIRCAM.F210M": [16.73, 0.10],
+            "JWST/NIRCAM.F250M": [16.95, 0.20],
+            "JWST/NIRCAM.F300M": [16.49, 0.09],
+            "JWST/NIRCAM.F335M": [15.34, 0.12],
+            "JWST/NIRCAM.F410M": [14.85, 0.09],
+            "JWST/NIRCAM.F430M": [15.19, 0.05],
+            "JWST/NIRCAM.F460M": [15.17, 0.08]
         },
         "semi_major": [
-            37.6,
-            2.2
+            41.0,
+            -0.15,
+            0.15
         ],
         "mass_star": [
             1.52,
@@ -353,19 +499,27 @@
             0.7
         ],
         "accretion": false,
+        "age": [
+            42.0,
+            -16.0,
+            14.0
+        ],
         "references": [
             "Baines et al. 2012",
+            "Balmer et al. 2025b",
             "Currie et al. 2012",
             "Currie et al. 2014",
             "Gaia Early Data Release 3",
             "Galicher et al. 2011",
             "Marois et al. 2010",
+            "Brandt et al. 2021",
             "Wang et al. 2018",
             "Zurlo et al. 2016"
         ]
     },
     "HR 8799 d": {
         "simbad": "HR 8799",
+        "gaia_dr3": 2832463659640297472,
         "parallax": [
             24.462,
             0.0455
@@ -410,11 +564,18 @@
             "Keck/NIRC2.Ms": [
                 14.65,
                 0.35
-            ]
+            ],
+            "JWST/NIRCAM.F250M": [16.65, 0.14],
+            "JWST/NIRCAM.F300M": [15.78, 0.09],
+            "JWST/NIRCAM.F335M": [14.81, 0.05],
+            "JWST/NIRCAM.F410M": [14.26, 0.04],
+            "JWST/NIRCAM.F430M": [14.32, 0.05],
+            "JWST/NIRCAM.F460M": [14.27, 0.06]
         },
         "semi_major": [
-            27.7,
-            2.2
+            26.55,
+            -0.12,
+            0.12
         ],
         "mass_star": [
             1.52,
@@ -425,19 +586,27 @@
             0.7
         ],
         "accretion": false,
+        "age": [
+            42.0,
+            -16.0,
+            14.0
+        ],
         "references": [
             "Baines et al. 2012",
+            "Balmer et al. 2025b",
             "Currie et al. 2012",
             "Currie et al. 2014",
             "Gaia Early Data Release 3",
             "Galicher et al. 2011",
             "Marois et al. 2010",
+            "Brandt et al. 2021",
             "Wang et al. 2018",
             "Zurlo et al. 2016"
         ]
     },
     "HR 8799 e": {
         "simbad": "HR 8799",
+        "gaia_dr3": 2832463659640297472,
         "parallax": [
             24.462,
             0.0455
@@ -474,11 +643,16 @@
             "Paranal/NACO.NB405": [
                 13.72,
                 0.2
-            ]
+            ],
+            "JWST/NIRCAM.F335M": [15.49, 0.16],
+            "JWST/NIRCAM.F410M": [14.77, 0.16],
+            "JWST/NIRCAM.F430M": [15.21, 0.12],
+            "JWST/NIRCAM.F460M": [15.03, 0.11]
         },
         "semi_major": [
-            15.3,
-            1.4
+            16.0,
+            -0.1,
+            0.1
         ],
         "mass_star": [
             1.52,
@@ -489,17 +663,25 @@
             0.7
         ],
         "accretion": false,
+        "age": [
+            42.0,
+            -16.0,
+            14.0
+        ],
         "references": [
             "Baines et al. 2012",
+            "Balmer et al. 2025b",
             "Currie et al. 2014",
             "Gaia Early Data Release 3",
             "Marois et al. 2010",
+            "Brandt et al. 2021",
             "Wang et al. 2018",
             "Zurlo et al. 2016"
         ]
     },
     "HD 95086 b": {
         "simbad": "HD 95086",
+        "gaia_dr3": 5231963962676292224,
         "parallax": [
             11.5659,
             0.0187
@@ -519,8 +701,9 @@
             ]
         },
         "semi_major": [
-            52.0,
-            24.0
+            72,
+            -21.0,
+            1.0
         ],
         "mass_star": [
             1.6,
@@ -531,15 +714,22 @@
             2.0
         ],
         "accretion": false,
+        "age": [
+            17.0,
+            2.0,
+            2.0
+        ],
         "references": [
             "Chauvin et al. 2018",
             "De Rosa et al. 2016",
+            "Desgrange et al. 2022",
             "Gaia Early Data Release 3",
             "Rameau et al. 2013"
         ]
     },
     "PDS 70 b": {
         "simbad": "PDS 70",
+        "gaia_dr3": 6110141563309613056,
         "parallax": [
             8.8975,
             0.0191
@@ -588,7 +778,8 @@
         },
         "semi_major": [
             20.8,
-            0.7
+            -0.7,
+            0.6
         ],
         "mass_star": [
             0.98,
@@ -609,10 +800,16 @@
                 2.3e-19
             ]
         },
+        "age": [
+            5.4,
+            -1.0,
+            1.0
+        ],
         "references": [
             "Gaia Early Data Release 3",
             "Haffert et al. 2019",
             "Hashimoto et al. 2020",
+            "Müller et al. 2018",
             "Stolker et al. 2020b",
             "Wang et al. 2020",
             "Wang et al. 2021"
@@ -620,6 +817,7 @@
     },
     "PDS 70 c": {
         "simbad": "PDS 70",
+        "gaia_dr3": 6110141563309613056,
         "parallax": [
             8.8975,
             0.0191
@@ -636,6 +834,7 @@
         },
         "semi_major": [
             34.3,
+            -1.8,
             2.2
         ],
         "mass_star": [
@@ -647,9 +846,15 @@
             4.7
         ],
         "accretion": true,
+        "age": [
+            5.4,
+            -1.0,
+            1.0
+        ],
         "references": [
             "Gaia Early Data Release 3",
             "Haffert et al. 2019",
+            "Müller et al. 2018",
             "Stolker et al. 2020b",
             "Wang et al. 2020",
             "Wang et al. 2021"
@@ -657,6 +862,7 @@
     },
     "2M 1207 B": {
         "simbad": "2MASSWJ 1207334-393254",
+        "gaia_dr3": 3459372646830687104,
         "parallax": [
             15.4624,
             0.1163
@@ -697,6 +903,7 @@
         },
         "semi_major": [
             46.0,
+            -46.0,
             46.0
         ],
         "mass_star": [
@@ -708,9 +915,15 @@
             2.0
         ],
         "accretion": false,
+        "age": [
+            10.0,
+            -2.0,
+            2.0
+        ],
         "references": [
             "Chauvin et al. 2004",
             "Gaia Early Data Release 3",
+            "Luhman et al. 2023",
             "Mohanty et al. 2007",
             "Patience et al. 2010",
             "Song et al. 2006"
@@ -718,6 +931,7 @@
     },
     "AB Pic B": {
         "simbad": "AB Pic",
+        "gaia_dr3": 5495052596695570816,
         "parallax": [
             19.9452,
             0.0124
@@ -738,6 +952,7 @@
         },
         "semi_major": [
             260.0,
+            -260.0,
             260.0
         ],
         "mass_star": [
@@ -757,6 +972,7 @@
     },
     "HD 206893 B": {
         "simbad": "HD 206893",
+        "gaia_dr3": 6843672087120107264,
         "parallax": [
             24.5275,
             0.0354
@@ -788,8 +1004,9 @@
             ]
         },
         "semi_major": [
-            11.0,
-            11.0
+            9.6,
+            -0.3,
+            0.4
         ],
         "mass_star": [
             1.31,
@@ -800,17 +1017,58 @@
             20.0
         ],
         "accretion": false,
+        "age": [
+            155.0,
+            -15.0,
+            15.0
+        ],
         "references": [
             "Delorme et al. 2017",
             "Gaia Early Data Release 3",
             "Grandjean et al. 2019",
+            "Hinkley et al. 2023",
+            "Kammerer et al. 2021",
             "Milli et al. 2017",
             "Stolker et al. 2020a",
             "Ward-Duong et al. 2020"
         ]
     },
+    "HD 206893 c": {
+        "simbad": "HD 206893",
+        "gaia_dr3": 6843672087120107264,
+        "parallax": [
+            24.5275,
+            0.0354
+        ],
+        "semi_major": [
+            3.53,
+            -0.06,
+            0.08
+        ],
+        "mass_star": [
+            1.31,
+            0.03
+        ],
+        "mass_companion": [
+            12.7,
+            -1.0,
+            1.2
+        ],
+        "accretion": false,
+        "age": [
+            155.0,
+            -15.0,
+            15.0
+        ],
+        "references": [
+            "Gaia Early Data Release 3",
+            "Hinkley et al. 2023",
+            "Ward-Duong et al. 2020"
+        ]
+    },
     "RZ Psc B": {
         "simbad": "RZ Psc",
+        "gaia_dr3": 307981178401165184,
         "parallax": [
             5.3661,
             0.0274
@@ -833,6 +1091,7 @@
         },
         "semi_major": [
             23.0,
+            -23.0,
             23.0
         ],
         "mass_star": [
@@ -851,6 +1110,7 @@
     },
     "GQ Lup B": {
         "simbad": "GQ Lup",
+        "gaia_dr3": 6011522757643074304,
         "parallax": [
             6.4893,
             0.0289
@@ -933,6 +1193,7 @@
         },
         "semi_major": [
             150.0,
+            -50.0,
             50.0
         ],
         "mass_star": [
@@ -975,6 +1236,7 @@
     },
     "PZ Tel B": {
         "simbad": "PZ Tel",
+        "gaia_dr3": 6655168686921108864,
         "parallax": [
             21.1621,
             0.0223
@@ -1039,6 +1301,7 @@
         },
         "semi_major": [
             25.0,
+            -25.0,
             25.0
         ],
         "mass_star": [
@@ -1068,6 +1331,7 @@
     },
     "kappa And b": {
         "simbad": "kappa And",
+        "gaia_dr3": 1926476042681491712,
         "parallax": [
             19.4064,
             0.2104
@@ -1100,6 +1364,7 @@
         },
         "semi_major": [
             55.0,
+            -55.0,
             55.0
         ],
         "mass_star": [
@@ -1120,6 +1385,7 @@
     },
     "HD 1160 B": {
         "simbad": "HD 1160",
+        "gaia_dr3": 2741090498161113344,
         "parallax": [
             8.2721,
             0.0355
@@ -1148,6 +1414,7 @@
         },
         "semi_major": [
             81.0,
+            -81.0,
             81.0
         ],
         "mass_star": [
@@ -1167,7 +1434,8 @@
         ]
     },
     "ROXs 12 B": {
-        "simbad": "ROXs 12 B",
+        "simbad": "ROXs 12",
+        "gaia_dr3": 6048935358761628288,
         "parallax": [
             7.217,
             0.0172
@@ -1188,6 +1456,7 @@
         },
         "semi_major": [
             210.0,
+            -210.0,
             210.0
         ],
         "mass_star": [
@@ -1207,6 +1476,7 @@
     },
     "ROXs 42 Bb": {
         "simbad": "ROXs 42 B",
+        "gaia_dr3": 6047587937321868288,
         "parallax": [
             6.8284,
             0.0309
@@ -1239,6 +1509,7 @@
         },
         "semi_major": [
             157.0,
+            -157.0,
             157.0
         ],
         "mass_star": [
@@ -1261,6 +1532,7 @@
     },
     "GJ 504 b": {
         "simbad": "GJ 504",
+        "gaia_dr3": 3732539683617410816,
         "parallax": [
             56.8577,
             0.1224
@@ -1313,6 +1585,7 @@
         },
         "semi_major": [
             43.5,
+            -43.5,
             43.5
         ],
         "mass_star": [
@@ -1333,37 +1606,42 @@
         ]
     },
     "GJ 758 B": {
-            "simbad": "GJ 758",
-            "distance": [15.61, 0.005],
-            "parallax": [64.04, 0.02],
-            "app_mag": {
-                "Paranal/SPHERE.IRDIS_D_Y23_2": [20.15, 0.20],  
-                "Paranal/SPHERE.IRDIS_D_Y23_3": [19.39, 0.10], 
-                "Paranal/SPHERE.IRDIS_D_J23_2": [20.02, 0.25],
-                "Paranal/SPHERE.IRDIS_D_J23_3": [17.79, 0.18],
-                "Paranal/SPHERE.IRDIS_D_H23_2": [17.55, 0.12],
-                "Paranal/SPHERE.IRDIS_D_H23_3": [19.84, 0.42], 
-                "Paranal/SPHERE.IRDIS_D_K12_1": [17.99, 0.21],
-                "Paranal/SPHERE.IRDIS_D_K12_2": [18.74, 0.35],
-                "Subaru/CIAO.J": [17.58, 0.20],  
-                "Gemini/NIRI.H-G0203w": [18.16, 0.2], 
-                "Gemini/NIRI.Kcont209-G0217": [17.12, 0.2], 
-                "Keck/NIRC2.Lp": [15.0, 0.1],  
-                "Gemini/NIRI.CH4short-G0228": [17.74, 0.2] 
-            },
-            "mass_star": [0.96, 0.03], 
-            "mass_companion": [38.0, 0.8],
-            "semi_major": [29.7, 5.3],
-            "accretion": false,
-            "references": [
-                "Gaia Early Data Release 3",
-                "Vigan et al. 2016",
-                "Janson et al. 2011",
-                "Brandt, G. M. et al. 2021"
-            ]
+        "simbad": "GJ 758",
+        "gaia_dr3": 2046207670631964928,
+        "parallax": [64.04, 0.02],
+        "app_mag": {
+            "Paranal/SPHERE.IRDIS_D_Y23_2": [20.15, 0.20],
+            "Paranal/SPHERE.IRDIS_D_Y23_3": [19.39, 0.10],
+            "Paranal/SPHERE.IRDIS_D_J23_2": [20.02, 0.25],
+            "Paranal/SPHERE.IRDIS_D_J23_3": [17.79, 0.18],
+            "Paranal/SPHERE.IRDIS_D_H23_2": [17.55, 0.12],
+            "Paranal/SPHERE.IRDIS_D_H23_3": [19.84, 0.42],
+            "Paranal/SPHERE.IRDIS_D_K12_1": [17.99, 0.21],
+            "Paranal/SPHERE.IRDIS_D_K12_2": [18.74, 0.35],
+            "Subaru/CIAO.J": [17.58, 0.20],
+            "Gemini/NIRI.H-G0203w": [18.16, 0.2],
+            "Gemini/NIRI.Kcont209-G0217": [17.12, 0.2],
+            "Keck/NIRC2.Lp": [15.0, 0.1],
+            "Gemini/NIRI.CH4short-G0228": [17.74, 0.2]
+        },
+        "mass_star": [0.96, 0.03],
+        "mass_companion": [38.0, 0.8],
+        "semi_major": [
+            29.7,
+            -5.3,
+            5.3
+        ],
+        "accretion": false,
+        "references": [
+            "Gaia Early Data Release 3",
+            "Vigan et al. 2016",
+            "Janson et al. 2011",
+            "Brandt, G. M. et al. 2021"
+        ]
     },
     "GU Psc b": {
         "simbad": "GU Psc",
+        "gaia_dr3": 2784120641627589760,
         "parallax": [
             21.0051,
             0.026
@@ -1400,6 +1678,7 @@
         },
         "semi_major": [
             2000.0,
+            -2000.0,
             2000.0
         ],
         "mass_star": [
@@ -1418,6 +1697,7 @@
     },
     "2M0103 ABb": {
         "simbad": "2MASS J01033563-5515561",
+        "gaia_dr3": 4914632365579875200,
         "parallax": [
             21.18,
             1.37
@@ -1442,6 +1722,7 @@
         },
         "semi_major": [
             84.0,
+            -84.0,
             84.0
         ],
         "mass_star": [
@@ -1471,6 +1752,7 @@
     },
     "1RXS 1609 B": {
         "simbad": "1RXS J160929.1-210524",
+        "gaia_dr3": 6243841249531772800,
         "parallax": [
             7.2444,
             0.0176
@@ -1495,6 +1777,7 @@
         },
         "semi_major": [
             330.0,
+            -320.0,
             320.0
         ],
         "mass_star": [
@@ -1516,6 +1799,7 @@
     },
     "GSC 06214 B": {
         "simbad": "GSC 06214-00210",
+        "gaia_dr3": 6244440552088537600,
         "parallax": [
             9.1923,
             0.0214
@@ -1544,6 +1828,7 @@
         },
         "semi_major": [
             320.0,
+            -320.0,
             320.0
         ],
         "mass_star": [
@@ -1575,6 +1860,7 @@
     },
     "HD 72946 B": {
         "simbad": "HD 72946",
+        "gaia_dr3": 594989417312890368,
         "parallax": [
             38.9809,
             0.0412
@@ -1591,6 +1877,7 @@
         },
         "semi_major": [
             6.45,
+            -0.08,
             0.08
         ],
         "mass_star": [
@@ -1609,6 +1896,7 @@
     },
     "HIP 64892 B": {
         "simbad": "HIP 64892",
+        "gaia_dr3": 6088264477373916032,
         "parallax": [
             8.3595,
             0.0483
@@ -1637,6 +1925,7 @@
         },
         "semi_major": [
             159.0,
+            -159.0,
             159.0
         ],
         "mass_star": [
@@ -1655,6 +1944,7 @@
     },
     "HD 13724 B": {
         "simbad": "HD 13724",
+        "gaia_dr3": 4942867480584948352,
         "parallax": [
             23.0157,
             0.0178
@@ -1687,6 +1977,7 @@
         },
         "semi_major": [
             26.3,
+            -5.6,
             5.6
         ],
         "mass_star": [
@@ -1705,6 +1996,7 @@
     },
     "YSES 1 b": {
         "simbad": "TYC 8998-760-1",
+        "gaia_dr3": 5864061893213196032,
         "parallax": [
             10.6124,
             0.0116
@@ -1765,6 +2057,7 @@
         },
         "semi_major": [
             162.0,
+            -162.0,
             162.0
         ],
         "mass_star": [
@@ -1784,6 +2077,7 @@
     },
     "YSES 1 c": {
         "simbad": "TYC 8998-760-1",
+        "gaia_dr3": 5864061893213196032,
         "parallax": [
             10.6124,
             0.0116
@@ -1828,6 +2122,7 @@
         },
         "semi_major": [
             320.0,
+            -320.0,
             320.0
         ],
         "mass_star": [
@@ -1845,42 +2140,9 @@
             "Gaia Early Data Release 3"
         ]
     },
-    "YSES 2 b": {
-        "simbad": "TYC 8984-2245-1",
-        "parallax": [
-            9.1115,
-            0.031
-        ],
-        "app_mag": {
-            "Paranal/SPHERE.IRDIS_B_H": [
-                18.76,
-                0.11
-            ],
-            "Paranal/SPHERE.IRDIS_B_Ks": [
-                17.9,
-                0.11
-            ]
-        },
-        "semi_major": [
-            115.0,
-            115.0
-        ],
-        "mass_star": [
-            1.1,
-            0.03
-        ],
-        "mass_companion": [
-            7.0,
-            1.0
-        ],
-        "accretion": false,
-        "references": [
-            "Bohn et al. 2021",
-            "Gaia Early Data Release 3"
-        ]
-    },
     "HD 142527 B": {
         "simbad": "HD 142527",
+        "gaia_dr3": 5994826707951507200,
         "parallax": [
             6.2791,
             0.0284
@@ -1963,6 +2225,7 @@
         },
         "semi_major": [
             38.0,
+            -20.0,
             20.0
         ],
         "mass_star": [
@@ -1999,6 +2262,7 @@
     },
     "CS Cha B": {
         "simbad": "CS Cha",
+        "gaia_dr3": 5201179389431267584,
         "parallax": [
             5.9251,
             0.0675
@@ -2019,7 +2283,8 @@
         },
         "semi_major": [
             214.0,
-            0.0
+            -214.0,
+            214.0
         ],
         "mass_star": [
             1.0,
@@ -2044,6 +2309,7 @@
     },
     "CT Cha B": {
         "simbad": "CT Cha",
+        "gaia_dr3": 5201360671411974912,
         "parallax": [
             5.2645,
             0.0116
@@ -2066,7 +2332,8 @@
         },
         "semi_major": [
             430.0,
-            0.0
+            -430.0,
+            430.0
         ],
         "mass_star": [
             0.55,
@@ -2087,6 +2354,7 @@
     },
     "SR 12 C": {
         "simbad": "2MASS J16271951-2441403",
+        "gaia_dr3": 6049072007438134272,
         "parallax": [
             8.9034,
             0.4288
@@ -2111,7 +2379,8 @@
         },
         "semi_major": [
             1100.0,
-            0.0
+            -1100.0,
+            1100.0
         ],
         "mass_star": [
             1.05,
@@ -2142,6 +2411,7 @@
     },
     "DH Tau B": {
         "simbad": "DH Tau",
+        "gaia_dr3": 151374202498079872,
         "parallax": [
             7.4936,
             0.0255
@@ -2162,7 +2432,8 @@
         },
         "semi_major": [
             330.0,
-            0.0
+            -330.0,
+            330.0
         ],
         "mass_star": [
             0.33,
@@ -2182,6 +2453,7 @@
     },
     "HD 4747 B": {
         "simbad": "HD 4747",
+        "gaia_dr3": 2348830516542653824,
         "parallax": [
             53.0526,
             0.0282
@@ -2198,6 +2470,7 @@
         },
         "semi_major": [
             10.1,
+            -0.4,
             0.4
         ],
         "mass_star": [
@@ -2217,6 +2490,7 @@
     },
     "HR 3549 B": {
         "simbad": "HR 3549",
+        "gaia_dr3": 5304593027881569024,
         "parallax": [
             10.5509,
             0.0383
@@ -2251,7 +2525,8 @@
         },
         "semi_major": [
             80.0,
-            0.0
+            -80.0,
+            80.0
         ],
         "mass_star": [
             2.32,
@@ -2270,6 +2545,7 @@
     },
     "CHXR 73 B": {
         "simbad": "CHXR 73",
+        "gaia_dr3": 5201175987817179136,
         "parallax": [
             5.2256,
             0.0804
@@ -2286,7 +2562,8 @@
         },
         "semi_major": [
             210.0,
-            0.0
+            -210.0,
+            210.0
         ],
         "mass_star": [
             0.35,
@@ -2304,6 +2581,7 @@
     },
     "HD 19467 B": {
         "simbad": "HD 19467",
+        "gaia_dr3": 5155981730587168384,
         "parallax": [
             31.2191,
             0.024
@@ -2332,6 +2610,7 @@
         },
         "semi_major": [
             54.0,
+            -9.0,
             9.0
         ],
         "mass_star": [
@@ -2350,6 +2629,7 @@
     },
     "b Cen (AB)b": {
         "simbad": "b Cen",
+        "gaia_dr3": 6105713692544123520,
         "parallax": [
             10.0339,
             0.3142
@@ -2374,6 +2654,7 @@
         },
         "semi_major": [
             530.0,
+            -530.0,
             530.0
         ],
         "mass_star": [
@@ -2392,6 +2673,7 @@
     },
     "VHS 1256 B": {
         "simbad": "SIPS J1256-1257",
+        "gaia_dr3": 3526198184723289472,
         "parallax": [
             47.2733,
             0.4731
@@ -2420,6 +2702,7 @@
         },
         "semi_major": [
             150.0,
+            -150.0,
             150.0
         ],
         "mass_star": [

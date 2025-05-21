@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "species"
+authors = [{name = "Tomas Stolker", email = "stolker@strw.leidenuniv.nl"}]
+description = "Toolkit for atmospheric characterization of directly imaged exoplanets"
+readme = "README.rst"
+requires-python = ">=3.10,<3.13"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "astropy",
+    "dust-extinction",
+    "h5py",
+    "matplotlib",
+    "numba",
+    "numpy",
+    "pooch",
+    "scipy",
+    "spectres",
+    "tqdm",
+    "typeguard",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+full = [
+    "astrodbkit2",
+    "astroquery",
+    "dynesty",
+    "emcee",
+    "molmass",
+    "pandas",
+    "PyMieScatt",
+    "pymultinest",
+    "requests",
+    "schwimmbad",
+    "shapely",
+    "specutils",
+    "SQLAlchemy",
+    "ultranest",
+    "xlrd",
+]
+docs = [
+    "cython",
+    "jupyter",
+    "nbsphinx",
+    "pandoc",
+    "sphinx",
+    "sphinx-automodapi",
+    "sphinx_book_theme",
+]
+test = [
+    "black",
+    "flake8",
+    "pycodestyle",
+    "pylint",
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+Documentation = "https://species.readthedocs.io"
+Repository = "https://github.com/tomasstolker/species"
+Issues = "https://github.com/tomasstolker/species/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["species*"]
+
+[tool.setuptools_scm]
+write_to = "species/_version.py"
+
+[tool.setuptools.package-data]
+"species.data" = ["*.json"]

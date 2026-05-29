@@ -2,24 +2,25 @@
 Utility functions for converting quantities.
 """
 
-from typing import Optional, Tuple, Union
+from numbers import Real
 
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Optional, Tuple, Union
 
 from species.core import constants
 
 
-@typechecked
+@beartype
 def apparent_to_absolute(
     app_mag: Union[
-        Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
+        Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]
     ],
     distance: Union[
-        Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
+        Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]
     ],
-) -> Union[Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]]:
+) -> Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]:
     """
     Function for converting an apparent magnitude into an absolute
     magnitude. The uncertainty on the distance is propagated into the
@@ -60,15 +61,15 @@ def apparent_to_absolute(
     return abs_mag, abs_err
 
 
-@typechecked
+@beartype
 def absolute_to_apparent(
     abs_mag: Union[
-        Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
+        Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]
     ],
     distance: Union[
-        Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
+        Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]
     ],
-) -> Union[Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]]:
+) -> Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]:
     """
     Function for converting an absolute magnitude
     into an apparent magnitude.
@@ -100,12 +101,12 @@ def absolute_to_apparent(
     return app_mag, abs_mag[1]
 
 
-@typechecked
+@beartype
 def parallax_to_distance(
     parallax: Union[
-        Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
+        Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]
     ],
-) -> Union[Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]]:
+) -> Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]:
     """
     Function for converting from parallax to distance.
 
@@ -138,10 +139,10 @@ def parallax_to_distance(
     return distance, distance_error
 
 
-@typechecked
+@beartype
 def logg_to_mass(
-    logg: Union[float, np.ndarray], radius: Union[float, np.ndarray]
-) -> Union[float, np.ndarray]:
+    logg: Union[Real, np.ndarray], radius: Union[Real, np.ndarray]
+) -> Union[Real, np.ndarray]:
     """
     Function for converting :math:`\\log(g)` and a radius into a mass.
 
@@ -165,10 +166,10 @@ def logg_to_mass(
     return mass / constants.M_JUP
 
 
-@typechecked
+@beartype
 def logg_to_radius(
-    logg: Union[float, np.ndarray], mass: Union[float, np.ndarray]
-) -> Union[float, np.ndarray]:
+    logg: Union[Real, np.ndarray], mass: Union[Real, np.ndarray]
+) -> Union[Real, np.ndarray]:
     """
     Function for converting :math:`\\log(g)` and a mass into a radius.
 
@@ -192,10 +193,10 @@ def logg_to_radius(
     return radius / constants.R_JUP
 
 
-@typechecked
+@beartype
 def mass_to_logg(
-    mass: Union[float, np.ndarray], radius: Union[float, np.ndarray]
-) -> Union[float, np.ndarray]:
+    mass: Union[Real, np.ndarray], radius: Union[Real, np.ndarray]
+) -> Union[Real, np.ndarray]:
     """
     Function for converting a mass and radius into :math:`\\log(g)`.
 
@@ -218,10 +219,10 @@ def mass_to_logg(
     return np.log10(gravity)
 
 
-@typechecked
+@beartype
 def luminosity_to_teff(
-    luminosity: Union[float, np.ndarray], radius: Union[float, np.ndarray]
-) -> Union[float, np.ndarray]:
+    luminosity: Union[Real, np.ndarray], radius: Union[Real, np.ndarray]
+) -> Union[Real, np.ndarray]:
     """
     Function for converting a luminosity and radius into :math:`T_\\mathrm{eff}`.
     Parameters

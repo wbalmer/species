@@ -5,12 +5,13 @@ Module with reading functionalities for data from individual objects.
 import os
 
 from configparser import ConfigParser
-from typing import List, Optional, Union, Tuple
+from numbers import Real
 
 import h5py
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import List, Optional, Union, Tuple
 
 from species.util.convert_util import apparent_to_absolute
 
@@ -20,7 +21,7 @@ class ReadObject:
     Class for reading data from an individual object from the database.
     """
 
-    @typechecked
+    @beartype
     def __init__(self, object_name: str) -> None:
         """
         Parameters
@@ -37,7 +38,10 @@ class ReadObject:
 
         self.object_name = object_name
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = ConfigParser()
         config.read(config_file)
@@ -51,7 +55,7 @@ class ReadObject:
                     "present in the database."
                 )
 
-    @typechecked
+    @beartype
     def list_filters(self, verbose=True) -> List[str]:
         """
         Function for listing and returning the filter profile names for
@@ -86,7 +90,7 @@ class ReadObject:
 
         return filter_list
 
-    @typechecked
+    @beartype
     def get_photometry(self, filter_name: str) -> np.ndarray:
         """
         Function for reading photometric data of the object
@@ -120,7 +124,7 @@ class ReadObject:
 
         return obj_phot
 
-    @typechecked
+    @beartype
     def get_spectrum(self) -> dict:
         """
         Function for reading the spectra and covariance
@@ -158,8 +162,8 @@ class ReadObject:
 
         return spectrum
 
-    @typechecked
-    def get_distance(self) -> Tuple[float, float]:
+    @beartype
+    def get_distance(self) -> Tuple[Real, Real]:
         """
         Function for reading the distance to the object.
 
@@ -192,8 +196,8 @@ class ReadObject:
 
         return distance[0], distance[1]
 
-    @typechecked
-    def get_parallax(self) -> Tuple[float, float]:
+    @beartype
+    def get_parallax(self) -> Tuple[Real, Real]:
         """
         Function for reading the parallax of the object.
 
@@ -221,10 +225,10 @@ class ReadObject:
 
         return obj_parallax[0], obj_parallax[1]
 
-    @typechecked
+    @beartype
     def get_absmag(
         self, filter_name: str
-    ) -> Union[Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]]:
+    ) -> Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]:
         """
         Function for calculating the absolute magnitudes of the object
         from the apparent magnitudes and distance. The errors on the

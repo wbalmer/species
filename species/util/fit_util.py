@@ -6,13 +6,14 @@ import os
 import warnings
 
 from configparser import ConfigParser
-from typing import Dict, List, Optional, Union
+from numbers import Real
 
 import h5py
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Union
 from spectres.spectral_resampling_numba import spectres_numba
-from typeguard import typechecked
 
 from species.core.box import ObjectBox, ResidualsBox, SynphotBox, create_box
 from species.phot.syn_phot import SyntheticPhotometry
@@ -26,12 +27,12 @@ from species.util.model_util import binary_to_single, powerlaw_spectrum
 from species.util.retrieval_util import convolve_spectrum
 
 
-@typechecked
+@beartype
 def multi_photometry(
     datatype: str,
     spectrum: str,
     filters: List[str],
-    parameters: Dict[str, float],
+    parameters: Dict[str, Real],
     radtrans: Optional[ReadRadtrans] = None,
     verbose: bool = True,
 ) -> SynphotBox:
@@ -77,7 +78,7 @@ def multi_photometry(
 
         print("\nParameters:")
         for param_key, param_value in parameters.items():
-            if isinstance(param_value, float):
+            if isinstance(param_value, Real):
                 if -0.1 < param_value < 0.1:
                     print(f"   - {param_key} = {param_value:.2e}")
                 else:
@@ -212,9 +213,9 @@ def multi_photometry(
     )
 
 
-@typechecked
+@beartype
 def get_residuals(
-    parameters: Dict[str, float],
+    parameters: Dict[str, Real],
     objectbox: ObjectBox,
     tag: Optional[str] = None,
     inc_phot: Union[bool, List[str]] = True,
@@ -304,7 +305,10 @@ def get_residuals(
 
     print_section("Calculate residuals")
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = ConfigParser()
     config.read(config_file)
@@ -319,8 +323,12 @@ def get_residuals(
                 # Samples from FitModel or AtmosphericRetrieval
                 dset = hdf5_file[f"results/fit/{tag}/samples"]
 
-                if dset.attrs["model_name"] == "petitradtrans":
-                    results_type = "AtmosphericRetrieval"
+                if "model_name" in dset.attrs:
+                    if dset.attrs["model_name"] == "petitradtrans":
+                        results_type = "AtmosphericRetrieval"
+                    else:
+                        results_type = "FitModel"
+
                 else:
                     results_type = "FitModel"
 

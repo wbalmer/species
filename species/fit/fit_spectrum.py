@@ -8,31 +8,31 @@ simply fitting a scaling parameter.
 
 import math
 
-from typing import Dict, List, Optional, Tuple, Union
-
 from multiprocessing import cpu_count, Pool
+from numbers import Real
 
 import emcee
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 
 from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_calibration import ReadCalibration
 from species.read.read_object import ReadObject
 
 
-@typechecked
+@beartype
 def lnprob(
     param: np.ndarray,
-    bounds: Dict[str, Tuple[float, float]],
+    bounds: Dict[str, Tuple[Real, Real]],
     modelpar: List[str],
     objphot: List[np.ndarray],
     specphot: Union[
-        List[float],
-        List[Tuple[SyntheticPhotometry, Tuple[np.float64, np.float64]]],
+        List[Real],
+        List[Tuple[SyntheticPhotometry, Tuple[Real, Real]]],
     ],
-) -> float:
+) -> Real:
     """
     Internal function for calculating the posterior probability.
 
@@ -91,13 +91,13 @@ class FitSpectrum:
     Class for fitting a calibration spectrum to photometric data.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         object_name: str,
         filters: Optional[List[str]],
         spectrum: str,
-        bounds: Dict[str, Tuple[float, float]],
+        bounds: Dict[str, Tuple[Real, Real]],
     ) -> None:
         """
         Parameters
@@ -153,12 +153,12 @@ class FitSpectrum:
 
         self.modelpar = ["scaling"]
 
-    @typechecked
+    @beartype
     def run_mcmc(
         self,
         nwalkers: int,
         nsteps: int,
-        guess: Union[Dict[str, float], Dict[str, None]],
+        guess: Union[Dict[str, Real], Dict[str, None]],
         tag: str,
     ) -> None:
         """

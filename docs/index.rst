@@ -3,29 +3,31 @@
 Documentation for *species*
 ===========================
 
-*species* is a toolkit for atmospheric characterization of directly imaged exoplanets.
+*species* is a toolkit for atmospheric characterization of directly imaged exoplanets
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Getting Started
    :hidden:
 
    installation
-   tutorials/running_species.ipynb
+   tutorials/first_example.ipynb
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: User Documentation
    :hidden:
 
-   overview
+   introduction
    configuration
    database
+   data
    tutorials
    modules
+   faq
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: About species
    :hidden:
 

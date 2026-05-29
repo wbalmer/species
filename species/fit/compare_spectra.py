@@ -9,13 +9,14 @@ import configparser
 import os
 import warnings
 
-from typing import List, Optional, Tuple, Union
+from numbers import Real
 
 import h5py
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import List, Optional, Tuple, Union
 from scipy.interpolate import interp1d
-from typeguard import typechecked
 
 from species.core import constants
 from species.data.spec_data.add_spec_data import add_spec_library
@@ -33,11 +34,11 @@ class CompareSpectra:
     library of empirical spectra or a grid of model spectra.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         object_name: str,
-        spec_name: Union[str, List[str]],
+        spec_name: Optional[Union[str, List[str]]] = None,
     ) -> None:
         """
         Parameters
@@ -46,11 +47,14 @@ class CompareSpectra:
             Object name as stored in the database with
             :func:`~species.data.database.Database.add_object` or
             :func:`~species.data.database.Database.add_companion`.
-        spec_name : str, list(str)
+        spec_name : str, list(str), None
             Name of the spectrum or a list with the names of the
             spectra that will be used for the comparison. The
             spectrum names should have been stored at the object
-            data of ``object_name``.
+            data of ``object_name``. No spectra are selected if
+            the argument is set to ``None``, which is only
+            possible when selecting photometric fluxes with the
+            ``inc_phot`` parameter in ``compare_model``.
 
         Returns
         -------
@@ -61,12 +65,18 @@ class CompareSpectra:
         self.object_name = object_name
         self.spec_name = spec_name
 
-        if isinstance(self.spec_name, str):
+        if self.spec_name is None:
+            self.spec_name = []
+
+        elif isinstance(self.spec_name, str):
             self.spec_name = [self.spec_name]
 
         self.object = ReadObject(object_name)
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = configparser.ConfigParser()
         config.read(config_file)
@@ -74,16 +84,16 @@ class CompareSpectra:
         self.database = config["species"]["database"]
         self.data_folder = config["species"]["data_folder"]
 
-    @typechecked
+    @beartype
     def spectral_type(
         self,
         tag: str,
         spec_library: str,
-        wavel_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        wavel_range: Optional[Tuple[Optional[Real], Optional[Real]]] = None,
         sptypes: Optional[List[str]] = None,
-        av_ext: Optional[Union[List[float], np.ndarray]] = None,
-        rad_vel: Optional[Union[List[float], np.ndarray]] = None,
-    ) -> List[Tuple[float, str, str]]:
+        av_ext: Optional[Union[List[Real], np.ndarray]] = None,
+        rad_vel: Optional[Union[List[Real], np.ndarray]] = None,
+    ) -> List[Tuple[Real, str, str]]:
         """
         Method for finding the best matching empirical spectra
         from the selected library by evaluating the goodness-of-fit
@@ -392,13 +402,13 @@ class CompareSpectra:
 
         return best_list
 
-    @typechecked
+    @beartype
     def compare_model(
         self,
         tag: str,
         model: str,
-        av_points: Optional[Union[List[float], np.ndarray]] = None,
-        fix_logg: Optional[float] = None,
+        av_points: Optional[Union[List[Real], np.ndarray]] = None,
+        fix_logg: Optional[Real] = None,
         scale_spec: Optional[List[str]] = None,
         weights: bool = True,
         inc_phot: Union[List[str], bool] = False,

@@ -5,20 +5,21 @@ Utility functions for dust cross sections and extinction.
 import os
 import configparser
 
-from typing import Dict, List, Tuple, Union
+from numbers import Real
 
 import h5py
 import numpy as np
 
-from typeguard import typechecked
-from scipy.interpolate import interp1d, RegularGridInterpolator
+from beartype import beartype
+from beartype.typing import List, Tuple, Union
+from scipy.interpolate import RegularGridInterpolator
 from scipy.stats import lognorm
 
 from species.read.read_filter import ReadFilter
 from species.data.misc_data.dust_data import add_cross_sections, add_optical_constants
 
 
-@typechecked
+@beartype
 def check_dust_database() -> str:
     """
     Function to check if the dust data is present in the
@@ -30,7 +31,10 @@ def check_dust_database() -> str:
         Path of the HDF5 database.
     """
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -41,10 +45,7 @@ def check_dust_database() -> str:
     with h5py.File(database_path, "r") as hdf5_file:
         # Check if the data are found in 'r' mode because the
         # 'a' mode is not possible when using multiprocessing
-        if "dust" in hdf5_file:
-            data_found = True
-        else:
-            data_found = False
+        data_found = "dust" in hdf5_file
 
     if not data_found:
         with h5py.File(database_path, "a") as hdf5_file:
@@ -54,9 +55,9 @@ def check_dust_database() -> str:
     return database_path
 
 
-@typechecked
+@beartype
 def log_normal_distribution(
-    radius_g: float, sigma_g: float, n_bins: int
+    radius_g: Real, sigma_g: Real, n_bins: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Function for returning a log-normal size distribution. See Eq. 9
@@ -120,9 +121,9 @@ def log_normal_distribution(
     return dn_grains, r_width, radii
 
 
-@typechecked
+@beartype
 def power_law_distribution(
-    exponent: float, radius_min: float, radius_max: float, n_bins: int
+    exponent: Real, radius_min: Real, radius_max: Real, n_bins: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Function for returning a power-law size distribution.
@@ -172,14 +173,14 @@ def power_law_distribution(
     return dn_grains, r_width, radii
 
 
-@typechecked
+@beartype
 def dust_cross_section(
     dn_grains: np.ndarray,
     radii: np.ndarray,
-    wavelength: float,
-    n_index: float,
-    k_index: float,
-) -> np.float64:
+    wavelength: Real,
+    n_index: Real,
+    k_index: Real,
+) -> Real:
     """
     Function for calculating the extinction cross section for a size
     distribution of dust grains.
@@ -233,14 +234,14 @@ def dust_cross_section(
     return c_ext  # (um2)
 
 
-@typechecked
+@beartype
 def calc_reddening(
     filters_color: Tuple[str, str],
-    extinction: Tuple[str, float],
+    extinction: Tuple[str, Real],
     composition: str = "MgSiO3",
     structure: str = "crystalline",
-    radius_g: float = 1.0,
-) -> Tuple[float, float]:
+    radius_g: Real = 1.0,
+) -> Tuple[Real, Real]:
     """
     Function for calculating the reddening of a color given the
     extinction for a given filter. A log-normal size distribution with
@@ -349,8 +350,8 @@ def calc_reddening(
     )
 
 
-@typechecked
-def interp_lognorm() -> Tuple[
+@beartype
+def interp_lognorm(verbose: bool = True) -> Tuple[
     RegularGridInterpolator,
     np.ndarray,
     np.ndarray,
@@ -359,6 +360,11 @@ def interp_lognorm() -> Tuple[
     Function for interpolating the cross sections for dust grains with
     a log-normal size distribution. The returned dictionary contains
     the cross sections for each filter and spectrum.
+
+    Parameters
+    ----------
+    verbose : bool
+        Print information.
 
     Returns
     -------
@@ -380,40 +386,18 @@ def interp_lognorm() -> Tuple[
         radius_g = np.asarray(h5_file["dust/lognorm/mgsio3/crystalline/radius_g"])
         sigma_g = np.asarray(h5_file["dust/lognorm/mgsio3/crystalline/sigma_g"])
 
-    print("Grid boundaries of the dust opacities:")
-    print(f"   - Wavelength (um) = {wavelength[0]:.2f} - {wavelength[-1]:.2f}")
-    print(f"   - Geometric mean radius (um) = {radius_g[0]:.2e} - {radius_g[-1]:.2e}")
-    print(f"   - Geometric standard deviation = {sigma_g[0]:.2f} - {sigma_g[-1]:.2f}")
+    if verbose:
+        print("Grid boundaries of the dust opacities:")
+        print(f"   - Wavelength (um) = {wavelength[0]:.2f} - {wavelength[-1]:.2f}")
+        print(
+            f"   - Geometric mean radius (um) = {radius_g[0]:.2e} - {radius_g[-1]:.2e}"
+        )
+        print(
+            f"   - Geometric standard deviation = {sigma_g[0]:.2f} - {sigma_g[-1]:.2f}"
+        )
 
-    # inc_phot.append("Generic/Bessell.V")
-    #
-    # cross_sections = {}
-    #
-    # for phot_item in inc_phot:
-    #     read_filt = ReadFilter(phot_item)
-    #     filt_trans = read_filt.get_filter()
-    #
-    #     cross_phot = np.zeros((radius_g.shape[0], sigma_g.shape[0]))
-    #
-    #     for i in range(radius_g.shape[0]):
-    #         for j in range(sigma_g.shape[0]):
-    #             cross_interp = interp1d(
-    #                 wavelength, cross_section[:, i, j], kind="linear", bounds_error=True
-    #             )
-    #
-    #             cross_tmp = cross_interp(filt_trans[:, 0])
-    #
-    #             integral1 = np.trapezoid(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-    #             integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
-    #
-    #             # Filter-weighted average of the extinction cross section
-    #             cross_phot[i, j] = integral1 / integral2
-    #
-    #     cross_sections[phot_item] = RegularGridInterpolator(
-    #         (radius_g, sigma_g), cross_phot, method="linear", bounds_error=True
-    #     )
-
-    print("Interpolating dust opacities...", end="")
+    if verbose:
+        print("Interpolating dust opacities...", end="")
 
     cross_sections = RegularGridInterpolator(
         (wavelength, radius_g, sigma_g),
@@ -422,13 +406,14 @@ def interp_lognorm() -> Tuple[
         bounds_error=True,
     )
 
-    print(" [DONE]")
+    if verbose:
+        print(" [DONE]")
 
     return cross_sections, radius_g, sigma_g
 
 
-@typechecked
-def interp_powerlaw() -> Tuple[
+@beartype
+def interp_powerlaw(verbose: bool = True) -> Tuple[
     RegularGridInterpolator,
     np.ndarray,
     np.ndarray,
@@ -437,6 +422,11 @@ def interp_powerlaw() -> Tuple[
     Function for interpolating the cross sections for dust grains with
     a power-law size distribution. The returned dictionary contains
     the cross sections for each filter and spectrum.
+
+    Parameters
+    ----------
+    verbose : bool
+        Print information.
 
     Returns
     -------
@@ -458,40 +448,14 @@ def interp_powerlaw() -> Tuple[
         radius_max = np.asarray(h5_file["dust/powerlaw/mgsio3/crystalline/radius_max"])
         exponent = np.asarray(h5_file["dust/powerlaw/mgsio3/crystalline/exponent"])
 
-    print("Grid boundaries of the dust opacities:")
-    print(f"   - Wavelength (um) = {wavelength[0]:.2f} - {wavelength[-1]:.2f}")
-    print(f"   - Maximum radius (um) = {radius_max[0]:.2e} - {radius_max[-1]:.2e}")
-    print(f"   - Power-law exponent = {exponent[0]:.2f} - {exponent[-1]:.2f}")
+    if verbose:
+        print("Grid boundaries of the dust opacities:")
+        print(f"   - Wavelength (um) = {wavelength[0]:.2f} - {wavelength[-1]:.2f}")
+        print(f"   - Maximum radius (um) = {radius_max[0]:.2e} - {radius_max[-1]:.2e}")
+        print(f"   - Power-law exponent = {exponent[0]:.2f} - {exponent[-1]:.2f}")
 
-    # inc_phot.append("Generic/Bessell.V")
-    #
-    # cross_sections = {}
-    #
-    # for phot_item in inc_phot:
-    #     read_filt = ReadFilter(phot_item)
-    #     filt_trans = read_filt.get_filter()
-    #
-    #     cross_phot = np.zeros((radius_max.shape[0], exponent.shape[0]))
-    #
-    #     for i in range(radius_max.shape[0]):
-    #         for j in range(exponent.shape[0]):
-    #             cross_interp = interp1d(
-    #                 wavelength, cross_section[:, i, j], kind="linear", bounds_error=True
-    #             )
-    #
-    #             cross_tmp = cross_interp(filt_trans[:, 0])
-    #
-    #             integral1 = np.trapezoid(filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0])
-    #             integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
-    #
-    #             # Filter-weighted average of the extinction cross section
-    #             cross_phot[i, j] = integral1 / integral2
-    #
-    #     cross_sections[phot_item] = RegularGridInterpolator(
-    #         (radius_max, exponent), cross_phot, method="linear", bounds_error=True
-    #     )
-
-    print("Interpolating dust opacities...", end="")
+    if verbose:
+        print("Interpolating dust opacities...", end="")
 
     cross_sections = RegularGridInterpolator(
         (wavelength, radius_max, exponent),
@@ -500,14 +464,15 @@ def interp_powerlaw() -> Tuple[
         bounds_error=True,
     )
 
-    print(" [DONE]")
+    if verbose:
+        print(" [DONE]")
 
     return cross_sections, radius_max, exponent
 
 
-@typechecked
+@beartype
 def ism_extinction(
-    av_mag: float, rv_red: float, wavelengths: Union[np.ndarray, List[float], float]
+    av_mag: Real, rv_red: Real, wavelengths: Union[np.ndarray, List[Real], Real]
 ) -> np.ndarray:
     """
     Function for calculating the optical and IR extinction
@@ -531,7 +496,7 @@ def ism_extinction(
         Extinction (mag) at ``wavelengths``.
     """
 
-    if isinstance(wavelengths, float):
+    if isinstance(wavelengths, Real):
         wavelengths = np.array([wavelengths])
 
     elif isinstance(wavelengths, list):
@@ -576,9 +541,9 @@ def ism_extinction(
     return av_mag * (a_coeff + b_coeff / rv_red)
 
 
-@typechecked
+@beartype
 def apply_ism_ext(
-    wavelengths: np.ndarray, flux: np.ndarray, v_band_ext: float, v_band_red: float
+    wavelengths: np.ndarray, flux: np.ndarray, v_band_ext: Real, v_band_red: Real
 ) -> np.ndarray:
     """
     Function for applying ISM extinction to a spectrum.
@@ -603,10 +568,8 @@ def apply_ism_ext(
     return flux * 10.0 ** (-0.4 * ext_mag)
 
 
-@typechecked
-def convert_to_av(
-    filter_name: str, filter_ext: float, v_band_red: float = 3.1
-) -> float:
+@beartype
+def convert_to_av(filter_name: str, filter_ext: Real, v_band_red: Real = 3.1) -> Real:
     """
     Function for converting the extinction in any filter from
     the `SVO Filter Profile Service <http://svo2.cab.inta-csic.

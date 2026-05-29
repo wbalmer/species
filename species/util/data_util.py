@@ -6,19 +6,20 @@ import os
 import tarfile
 import warnings
 
+from numbers import Real
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import h5py
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import List, Optional, Tuple, Union
 from scipy.interpolate import griddata
-from typeguard import typechecked
 
 from species.core import constants
 
 
-@typechecked
+@beartype
 def extract_tarfile(
     data_file: str,
     data_folder: str,
@@ -48,7 +49,7 @@ def extract_tarfile(
         if member_list is None:
             member_list = tar.getmembers()
 
-        @typechecked
+        @beartype
         def is_within_directory(directory: str, target: str) -> bool:
             abs_directory = os.path.abspath(directory)
             abs_target = os.path.abspath(target)
@@ -57,7 +58,7 @@ def extract_tarfile(
 
             return prefix == abs_directory
 
-        @typechecked
+        @beartype
         def safe_extract(
             tar: tarfile.TarFile,
             path: str = ".",
@@ -77,7 +78,7 @@ def extract_tarfile(
         safe_extract(tar, data_folder, member_list=member_list)
 
 
-@typechecked
+@beartype
 def update_sptype(sptypes: np.ndarray) -> List[str]:
     """
     Function to update a list with spectral types to two characters
@@ -152,7 +153,7 @@ def update_filter(filter_in):
     return filter_out
 
 
-@typechecked
+@beartype
 def sort_data(
     param_teff: np.ndarray,
     param_logg: Optional[np.ndarray],
@@ -322,11 +323,11 @@ def sort_data(
     return sorted_data
 
 
-@typechecked
+@beartype
 def write_data(
     model: str,
     parameters: List[str],
-    wavel_sampling: float,
+    wavel_sampling: Real,
     database: h5py._hl.files.File,
     data_sorted: List[np.ndarray],
 ) -> None:
@@ -374,7 +375,7 @@ def write_data(
     database.create_dataset(f"models/{model}/flux", data=data_sorted[n_param + 1])
 
 
-@typechecked
+@beartype
 def add_missing(
     model: str, parameters: List[str], database: h5py._hl.files.File
 ) -> None:
@@ -838,7 +839,7 @@ def add_missing(
     database.create_dataset(f"models/{model}/flux", data=10.0**flux)
 
 
-@typechecked
+@beartype
 def correlation_to_covariance(
     cor_matrix: np.ndarray, spec_sigma: np.ndarray
 ) -> np.ndarray:
@@ -868,7 +869,7 @@ def correlation_to_covariance(
     return cov_matrix
 
 
-@typechecked
+@beartype
 def convert_units(
     flux_in: np.ndarray, units_in: Tuple[str, str], convert_from: bool = True
 ) -> np.ndarray:
@@ -889,9 +890,10 @@ def convert_units(
         Tuple with the units of the wavelength ("um", "angstrom",
         "nm", "mm", "cm", "m", "Hz", "GHz") and the units of the
         flux density ("W m-2 um-1", "W m-2 m-1", "W m-2 Hz-1",
-        "erg s-1 cm-2 angstrom-1" "erg s-1 cm-2 Hz-1", "mJy",
-        "Jy", "MJy"). One can use "um" or "µm" interchangeably,
-        and similarly "AA", "Å", "A", or "angstrom".
+        "erg s-1 cm-2 angstrom-1" "erg s-1 cm-2 Hz-1", "uJy",
+        mJy", "Jy", "MJy"). One can use "um" or "µm"
+        interchangeably, and similarly "AA", "Å", "A", or
+        "angstrom".
     convert_from : bool
         Convert from ``units_in`` to :math:`\\mu\\text{m}` and
         :math:`\\text{W} \\text{m}^{-2} \\mu\\text{m}^{-1}` when set to
@@ -977,6 +979,7 @@ def convert_units(
         "W m-2 Hz-1",
         "erg s-1 cm-2 angstrom-1",
         "erg s-1 cm-2 Hz-1",
+        "uJy",
         "mJy",
         "Jy",
         "MJy",
@@ -1031,15 +1034,27 @@ def convert_units(
         "erg s-1 cm-2 Å-1",
     ]:
         if convert_from:
-            flux_out[:, 1] = flux_in[:, 1] * 1e-1
-        else:
             flux_out[:, 1] = flux_in[:, 1] * 1e1
+        else:
+            flux_out[:, 1] = flux_in[:, 1] * 1e-1
 
         if flux_out.shape[1] == 3:
             if convert_from:
-                flux_out[:, 2] = flux_in[:, 2] * 1e-1
-            else:
                 flux_out[:, 2] = flux_in[:, 2] * 1e1
+            else:
+                flux_out[:, 2] = flux_in[:, 2] * 1e-1
+
+    elif units_in[1] == "uJy":
+        if convert_from:
+            flux_out[:, 1] = flux_in[:, 1] * 1e-32 * speed_light / wavel_micron**2
+        else:
+            flux_out[:, 1] = flux_in[:, 1] * 1e32 * wavel_micron**2 / speed_light
+
+        if flux_out.shape[1] == 3:
+            if convert_from:
+                flux_out[:, 2] = flux_in[:, 2] * 1e-32 * speed_light / wavel_micron**2
+            else:
+                flux_out[:, 2] = flux_in[:, 2] * 1e32 * wavel_micron**2 / speed_light
 
     elif units_in[1] == "mJy":
         if convert_from:
@@ -1086,7 +1101,7 @@ def convert_units(
     return flux_out
 
 
-@typechecked
+@beartype
 def remove_directory(dir_in: Path) -> None:
     """
     Function for removing all files and directories within a

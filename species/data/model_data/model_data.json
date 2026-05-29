@@ -6,6 +6,8 @@
         "wavelength range": [0.5, 40],
         "lambda/d_lambda": 2000,
         "teff range": [100, 6600],
+        "reference": "Allard et al. (2001)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2001ApJ...556..357A",
         "checksum": "991f3919b260443bb54c61501d80dddfafe05879715492f5d04aa319d774903a"
     },
     "ames-dusty": {
@@ -15,6 +17,8 @@
         "wavelength range": [0.5, 40],
         "lambda/d_lambda": 2000,
         "teff range": [500, 4000],
+        "reference": "Allard et al. (2001)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2001ApJ...556..357A",
         "checksum": "3aff09243479a01003bfebdf6886fdbffc902739b625b6134509b6928a840447"
     },
     "atmo": {
@@ -74,7 +78,7 @@
     },
     "atmo-petrus2023-highres": {
         "parameters": ["teff", "logg", "feh", "c_o_ratio", "ad_index"],
-        "name": "ATMO (Petrus et al. 2023)",
+        "name": "ATMO (Petrus et al. 2023; high-res)",
         "file size": "2.4 GB",
         "wavelength range": [0.2, 2.5],
         "lambda/d_lambda": 10000,
@@ -85,11 +89,13 @@
     },
     "blackbody": {
         "parameters": ["teff"],
-        "name": "blackbody",
+        "name": "Blackbody",
         "file size": "41 MB",
         "wavelength range": [0.1, 5000],
         "lambda/d_lambda": 1000,
         "teff range": [10, 20000],
+        "reference": "Planck (1901)",
+        "url": "https://ui.adsabs.harvard.edu/abs/1901AnP...309..553P",
         "checksum": "afb8059f365378b7122e7170a62bfd312d3a21c5d514eb5aaab1558e69792d83"
     },
     "bt-cond": {
@@ -99,6 +105,8 @@
         "wavelength range": [0.1, 100],
         "lambda/d_lambda": 5000,
         "teff range": [800, 4000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "5b8d2bf3b280fe7016c5a4f569a9e1176292568cd73ecaf0223baf25e1a99d53"
     },
     "bt-cond-feh": {
@@ -108,6 +116,8 @@
         "wavelength range": [0.1, 100],
         "lambda/d_lambda": 5000,
         "teff range": [2600, 4000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "e357284c7e0082fa0eb7cbc78034f72bd731512de85813c325beb13d3c10f1ed"
     },
     "bt-dusty": {
@@ -117,6 +127,8 @@
         "wavelength range": [0.1, 100],
         "lambda/d_lambda": 5000,
         "teff range": [1000, 4000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "4d6c7af3388c5b86576df0dbe148fdec7f5c7817e1f83653a95bf994ab5a4f7c"
     },
     "bt-nextgen": {
@@ -126,34 +138,42 @@
         "wavelength range": [0.1, 5000],
         "lambda/d_lambda": 2000,
         "teff range": [2600, 30000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "eb3dda397d296b7aa9e4d7549fd77eed5c6ff625e6265a2c09b86b4c1f986de7"
     },
     "bt-nextgen-highres": {
         "parameters": ["teff", "logg", "feh"],
-        "name": "BT-NextGen",
+        "name": "BT-NextGen (high-res)",
         "file size": "1.3 GB",
         "wavelength range": [0.1, 50],
         "lambda/d_lambda": 200000,
         "teff range": [2600, 30000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "c2fe40a6d8da4ee96834a58908b69fedc0cf4dffdf867d6591320a98b031b3ab"
     },
     "bt-nextgen-optical": {
         "parameters": ["teff", "logg", "feh"],
-        "name": "BT-NextGen",
+        "name": "BT-NextGen (optical)",
         "file size": "7.2 GB",
         "wavelength range": [0.1, 1.0],
         "lambda/d_lambda": 500000,
         "teff range": [2600, 30000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "c195263c988cea59c9dacee23e4a9fc3878bc0b04c33e223cdcedb7464b1f9d3"
     },
     "bt-nextgen-subsolar": {
         "parameters": ["teff", "logg", "feh"],
-        "name": "BT-NextGen subsolar",
+        "name": "BT-NextGen (subsolar)",
         "file size": "564 MB",
         "wavelength range": [0.1, 50],
         "lambda/d_lambda": 2000,
         "teff range": [2600, 30000],
         "information": "[alpha/Fe] = 0.4",
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "54c193c90d2231a9b3c1567811988fbd770e57bef0b837ad31d77365aac20174"
     },
     "bt-settl": {
@@ -163,6 +183,8 @@
         "wavelength range": [0.1, 500],
         "lambda/d_lambda": 2000,
         "teff range": [400, 4000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "ca67668ebbf071d99f10ba2bf3092cdd9c0a13b2cc4688b4bd0da2d57e28300f"
     },
     "bt-settl-cifist": {
@@ -172,6 +194,8 @@
         "wavelength range": [0.1, 5000],
         "lambda/d_lambda": 10000,
         "teff range": [1200, 7000],
+        "reference": "Allard et al. (2012)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2012RSPTA.370.2765A",
         "checksum": "a1a1510d2b3e47ddad43dfcba9c508cf1177fcaa615881d02522e3458132aa3f"
     },
     "drift-phoenix": {
@@ -187,7 +211,7 @@
     },
     "exo-rem-lowres": {
         "parameters": ["teff", "logg", "feh", "c_o_ratio"],
-        "name": "Exo-REM",
+        "name": "Exo-REM (low-res)",
         "file size": "493 MB",
         "wavelength range": [0.34, 250.0],
         "lambda/d_lambda": 500,
@@ -198,7 +222,7 @@
     },
     "exo-rem-nocloud": {
         "parameters": ["teff", "logg", "feh", "c_o_ratio"],
-        "name": "Exo-REM",
+        "name": "Exo-REM (cloud-free)",
         "file size": "356 MB",
         "wavelength range": [0.34, 250.0],
         "lambda/d_lambda": 500,
@@ -209,7 +233,7 @@
     },
     "exo-rem-highres": {
         "parameters": ["teff", "logg", "feh", "c_o_ratio"],
-        "name": "Exo-REM",
+        "name": "Exo-REM (high-res)",
         "file size": "14 GB",
         "wavelength range": [0.7, 250.0],
         "lambda/d_lambda": 20000,
@@ -220,7 +244,7 @@
     },
     "exo-rem-highres-isotopes": {
         "parameters": ["teff", "logg", "feh", "c_o_ratio", "log_co_iso"],
-        "name": "Exo-REM",
+        "name": "Exo-REM (CO isotopologues)",
         "file size": "6.2G GB",
         "wavelength range": [0.7, 250.0],
         "lambda/d_lambda": 20000,
@@ -308,7 +332,7 @@
     },
     "morley2012": {
         "parameters": ["teff", "logg", "fsed"],
-        "name": "Morley et al. (2012)",
+        "name": "Morley T/Y dwarfs",
         "file size": "62 MB",
         "wavelength range": [0.6, 30],
         "lambda/d_lambda": 6000,
@@ -384,6 +408,18 @@
         "url": "https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..85L",
         "checksum": "1c2da2ab9f80265ece353f987e0c02fcc81c9034d1ca8fb94194640544b0bf8e"
     },
+    "phoenix-hauschildt2025": {
+        "parameters": ["teff", "logg", "feh"],
+        "name": "PHOENIX NewEra",
+        "file size": "1.7 GB",
+        "wavelength range": [0.09, 30],
+        "lambda/d_lambda": 20000,
+        "teff range": [2300, 12000],
+        "reference": "Hauschildt et al. (2025)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2025A%26A...698A..47H",
+        "information": "[alpha/Fe] = 0.0",
+        "checksum": "69b31ba61d5a9c6b1be641a418fbe92a819b6eefc0928eea90603c5c6525bad4"
+    },
     "phoenix-husser2013": {
         "parameters": ["teff", "logg", "feh"],
         "name": "PHOENIX (Husser et al. 2013)",
@@ -403,6 +439,8 @@
         "wavelength range": [0.4, 50],
         "lambda/d_lambda": 6000,
         "teff range": [500, 2400],
+        "reference": "Saumon & Marley (2008)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2008ApJ...689.1327S",
         "checksum": "874acbda7dcdb4a732d7c2605b8bf4381af331292c7d2c08f6380e874936654a"
     },
     "saumon2008-cloudy": {
@@ -412,6 +450,8 @@
         "wavelength range": [0.4, 50],
         "lambda/d_lambda": 6000,
         "teff range": [500, 2400],
+        "reference": "Saumon & Marley (2008)",
+        "url": "https://ui.adsabs.harvard.edu/abs/2008ApJ...689.1327S",
         "checksum": "e2d33de5e5658e11f43e1b68eaf25a411e0e2ac584b0f9989526d66b3c399754"
     },
     "sonora-cholla": {
@@ -495,7 +535,7 @@
     },
     "sonora-diamondback-highres": {
         "parameters": ["teff", "logg", "feh", "fsed"],
-        "name": "Sonora Diamondback",
+        "name": "Sonora Diamondback (high-res)",
         "file size": "2 GB",
         "wavelength range": [0.3, 250],
         "lambda/d_lambda": 30000,

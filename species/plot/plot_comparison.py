@@ -8,16 +8,17 @@ import configparser
 import os
 import warnings
 
-from typing import List, Optional, Tuple, Union
+from numbers import Real
 
 import h5py
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+from beartype import beartype
+from beartype.typing import List, Optional, Tuple, Union
 from matplotlib.ticker import AutoMinorLocator
 from scipy.interpolate import interp1d, RegularGridInterpolator
-from typeguard import typechecked
 
 from species.core import constants
 from species.read.read_model import ReadModel
@@ -31,14 +32,14 @@ from species.util.plot_util import (
 from species.util.spec_util import smooth_spectrum
 
 
-@typechecked
+@beartype
 def plot_statistic(
     tag: str,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    figsize: Optional[Tuple[float, float]] = (4.0, 2.5),
+    offset: Optional[Tuple[Real, Real]] = None,
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 2.5),
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
@@ -79,7 +80,10 @@ def plot_statistic(
     else:
         print(f"Plotting goodness-of-fit statistic: {output}...", end="")
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -197,17 +201,17 @@ def plot_statistic(
     return fig
 
 
-@typechecked
+@beartype
 def plot_empirical_spectra(
     tag: str,
     n_spectra: Optional[int] = None,
-    flux_offset: Optional[float] = None,
-    label_pos: Optional[Tuple[float, float]] = None,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
+    flux_offset: Optional[Real] = None,
+    label_pos: Optional[Tuple[Real, Real]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    figsize: Optional[Tuple[float, float]] = (4.0, 2.5),
+    offset: Optional[Tuple[Real, Real]] = None,
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 2.5),
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
@@ -263,7 +267,10 @@ def plot_empirical_spectra(
     if flux_offset is None:
         flux_offset = 0.0
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -457,15 +464,15 @@ def plot_empirical_spectra(
     return fig
 
 
-@typechecked
+@beartype
 def plot_grid_statistic(
     tag: str,
     upsample: bool = False,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    figsize: Optional[Tuple[float, float]] = (4.0, 2.5),
+    offset: Optional[Tuple[Real, Real]] = None,
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 2.5),
     output: Optional[str] = None,
     extra_param: Optional[str] = None,
     nlevels_main: int = 20,
@@ -474,13 +481,13 @@ def plot_grid_statistic(
         Union[
             str,
             dict,
-            Tuple[float, float],
+            Tuple[Real, Real],
         ]
     ] = "best",
 ) -> mpl.figure.Figure:
     """
     Function for plotting the results from the comparison with
-    a grid of empirical or model spectra
+    a grid of empirical or model spectra.
 
     Parameters
     ----------
@@ -537,7 +544,10 @@ def plot_grid_statistic(
     else:
         print(f"Plotting goodness-of-fit of model grid: {output}...", end="")
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -972,17 +982,17 @@ def plot_grid_statistic(
     return fig
 
 
-@typechecked
+@beartype
 def plot_model_spectra(
     tag: str,
     n_spectra: Optional[int] = None,
-    flux_offset: Optional[float] = None,
-    label_pos: Optional[Tuple[float, float]] = None,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
+    flux_offset: Optional[Real] = None,
+    label_pos: Optional[Tuple[Real, Real]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    figsize: Optional[Tuple[float, float]] = (4.0, 2.5),
+    offset: Optional[Tuple[Real, Real]] = None,
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 2.5),
     output: Optional[str] = None,
     leg_param: Optional[List[str]] = None,
 ) -> mpl.figure.Figure:
@@ -1046,7 +1056,10 @@ def plot_model_spectra(
     if flux_offset is None:
         flux_offset = 0.0
 
-    config_file = os.path.join(os.getcwd(), "species_config.ini")
+    if "SPECIES_CONFIG" in os.environ:
+        config_file = os.environ["SPECIES_CONFIG"]
+    else:
+        config_file = os.path.join(os.getcwd(), "species_config.ini")
 
     config = configparser.ConfigParser()
     config.read(config_file)

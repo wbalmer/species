@@ -6,7 +6,7 @@ import os
 import sys
 import warnings
 
-from typing import Optional, Union, List, Tuple, Dict
+from numbers import Real
 
 import dynesty
 import numpy as np
@@ -31,10 +31,11 @@ except:
         "(Linux) or DYLD_LIBRARY_PATH (Mac)?"
     )
 
+from beartype import beartype
+from beartype.typing import Optional, Union, List, Tuple, Dict
 from schwimmbad import MPIPool
 from scipy.interpolate import interp1d
 from scipy.stats import norm, truncnorm
-from typeguard import typechecked
 
 from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_model import ReadModel
@@ -72,7 +73,7 @@ class FitModel:
     of the spectra.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         object_name: str,
@@ -81,26 +82,25 @@ class FitModel:
             Dict[
                 str,
                 Union[
-                    Optional[Tuple[Optional[float], Optional[float]]],
+                    Optional[Tuple[Optional[Real], Optional[Real]]],
                     Tuple[
-                        Optional[Tuple[Optional[float], Optional[float]]],
-                        Optional[Tuple[Optional[float], Optional[float]]],
+                        Optional[Tuple[Optional[Real], Optional[Real]]],
+                        Optional[Tuple[Optional[Real], Optional[Real]]],
                     ],
                     Tuple[
-                        Optional[Tuple[float, float]],
-                        Optional[Tuple[float, float]],
-                        Optional[Tuple[float, float]],
+                        Optional[Tuple[Real, Real]],
+                        Optional[Tuple[Real, Real]],
+                        Optional[Tuple[Real, Real]],
                     ],
-                    List[Tuple[float, float]],
+                    List[Tuple[Real, Real]],
                 ],
             ]
         ] = None,
         inc_phot: Union[bool, List[str]] = True,
         inc_spec: Union[bool, List[str]] = True,
         fit_corr: Optional[List[str]] = None,
-        apply_weights: Union[bool, Dict[str, Union[float, np.ndarray]]] = False,
-        ext_filter: Optional[str] = None,
-        normal_prior: Optional[Dict[str, Tuple[float, float]]] = None,
+        apply_weights: Union[bool, Dict[str, Union[Real, np.ndarray]]] = False,
+        normal_prior: Optional[Dict[str, Tuple[Real, Real]]] = None,
         ext_model: Optional[str] = None,
         binary_prior: bool = False,
     ) -> None:
@@ -166,15 +166,21 @@ class FitModel:
                  :func:`~species.data.database.Database.add_object`.
                  The broadening is applied with the function from
                  `Carvalho & Johns-Krull (2023) <https://ui.adsabs.
-                 harvard.edu/abs/2023RNAAS...7...91C/abstract>`_.
-                 A single broadening parameter, ``vsini``, can be
-                 fitted, so it is applied for all spectra. Or, it is
+                 harvard.edu/abs/2023RNAAS...7...91C>`_. A single
+                 broadening parameter, ``vsini``, can be fitted,
+                 so it is applied for all spectra. Or, it is
                  also possible to fit the broadening for individual
                  spectra by for example including the parameter as
                  ``vsini_CRIRES`` in case the spectrum name is
                  ``CRIRES``, that is, the name used as tag when
                  adding the spectrum to the database with
                  :func:`~species.data.database.Database.add_object`.
+                 Additionally, the linear limb darkening coefficient,
+                 ``limb_dark`` can be included with a prior range
+                 between 0.0 and 1.0. Without explicitly including
+                 the parameter, otherwise the coefficient is set
+                 to 0.6. Similar to ``vsini``, the ``limb_dark``
+                 parameter can be fitted for individual spectra.
 
                - It is possible to fit a weighted combination of two
                  atmospheric parameters from the same model. This
@@ -226,11 +232,12 @@ class FitModel:
                  combined with an atmospheric model.
 
                - Parameter boundaries have to be provided for
-                 'disk_teff' and 'disk_radius'. For example,
-                 ``bounds={'teff': (2000., 3000.), 'radius': (1., 5.),
-                 'logg': (3.5, 4.5), 'disk_teff': (100., 2000.),
-                 'disk_radius': (1., 100.)}`` for fitting a single
-                 blackbody component, in addition to the atmospheric
+                 'disk_teff' (in K) and 'disk_radius' (in Rjup)
+                 For example, ``bounds={'teff': (2000., 3000.),
+                 'radius': (1., 5.), 'logg': (3.5, 4.5), 'disk_teff':
+                 (100., 2000.), 'disk_radius': (1., 100.)}`` for
+                 fitting a single blackbody component, in addition
+                 to the atmospheric
                  parameters. Or, ``bounds={'teff': (2000., 3000.),
                  'radius': (1., 5.), 'logg': (3.5, 4.5),
                  'disk_teff': [(2000., 500.), (1000., 20.)],
@@ -385,29 +392,32 @@ class FitModel:
                    distribution of grains with a crystalline MgSiO3
                    composition, and a homogeneous, spherical structure.
 
-                 - The size distribution is parameterized with a mean
-                   geometric radius (``lognorm_radius`` in um) and a
-                   geometric standard deviation (``lognorm_sigma``,
-                   dimensionless). The grid of cross sections has been
-                   calculated for mean geometric radii between 0.001
-                   and 10 um, and geometric standard deviations between
-                   1.1 and 10.
-
                  - The extinction (``lognorm_ext``) is fitted in the
                    $V$ band ($A_V$ in mag) and the wavelength-dependent
                    extinction cross sections are interpolated from a
-                   pre-tabulated grid.
-
-                 - The prior boundaries of ``lognorm_radius``,
-                   ``lognorm_sigma``, and ``lognorm_ext`` should be
+                   pre-tabulated grid. The prior boundary of should be
                    provided in the ``bounds`` dictionary, for example
-                   ``bounds={'lognorm_radius': (0.001, 10.),
-                   'lognorm_sigma': (1.1, 10.),
-                   'lognorm_ext': (0., 5.)}``.
+                   ``bounds={'lognorm_ext': (0., 5.)}``.
 
-                 - A uniform prior is used for ``lognorm_sigma`` and
-                   ``lognorm_ext``, and a log-uniform prior for
-                   ``lognorm_radius``.
+                 - The size distribution is parameterized by the
+                   logarithm (base 10) of the mean geometric
+                   radius (``lognorm_radius``) and the
+                   geometric standard deviation (``lognorm_sigma``).
+                   The grid of cross sections has been calculated for
+                   logarithmic radii between -3 and 1, so 0.001 to
+                   10 um, and geometric standard deviations between
+                   1.1 and 10 (dimensionless). These two parameters
+                   are automatically included so only ``lognorm_ext``
+                   needs to be added to ``bounds``.
+
+                 - Including the prior boundaries of ``lognorm_radius``
+                   and ``lognorm_sigma`` is optional, for example
+                   ``bounds={'lognorm_radius': (-1., 0.),
+                   'lognorm_sigma': (2., 4.)}``. The full available
+                   range is automatically used otherwise.
+
+                 - Uniform priors are used for ``lognorm_radius``,
+                   ``lognorm_sigma`` and ``lognorm_ext``.                   .
 
             Power-law size distribution:
 
@@ -415,28 +425,32 @@ class FitModel:
                    distribution of grains, with a crystalline MgSiO3
                    composition, and a homogeneous, spherical structure.
 
-                 - The size distribution is parameterized with a
-                   maximum radius (``powerlaw_max`` in um) and a
-                   power-law exponent (``powerlaw_exp``,
-                   dimensionless). The minimum radius is fixed to 1 nm.
-                   The grid of cross sections has been calculated for
-                   maximum radii between 0.01 and 100 um, and power-law
-                   exponents between -10 and 10.
-
                  - The extinction (``powerlaw_ext``) is fitted in the
                    $V$ band ($A_V$ in mag) and the wavelength-dependent
                    extinction cross sections are interpolated from a
-                   pre-tabulated grid.
-
-                 - The prior boundaries of ``powerlaw_max``,
-                   ``powerlaw_exp``, and ``powerlaw_ext`` should be
+                   pre-tabulated grid. The prior boundary of should be
                    provided in the ``bounds`` dictionary, for example
-                   ``{'powerlaw_max': (0.01, 100.), 'powerlaw_exp':
-                   (-10., 10.), 'powerlaw_ext': (0., 5.)}``.
+                   ``bounds={'powerlaw_ext': (0., 5.)}``.
 
-                 - A uniform prior is used for ``powerlaw_exp`` and
-                   ``powerlaw_ext``, and a log-uniform prior for
-                   ``powerlaw_max``.
+                 - The size distribution is parameterized by the
+                   logarithm (base 10) of the maximum radius
+                   (``powerlaw_max``) and a power-law exponent
+                   (``powerlaw_exp``). The minimum radius is fixed to
+                   1 nm. The grid of cross sections has been calculated
+                   for maximum radii between 0.01 and 100 um, so for
+                   ``powerlaw_max`` between -2 and 2, and power-law
+                   exponents between -10 and 10 (dimensionless). These
+                   two parameters are automatically included so only
+                   ``powerlaw_ext`` needs to be added to ``bounds``.
+
+                 - Including the prior boundaries of ``powerlaw_max``,
+                   and ``powerlaw_exp`` is optional, for example
+                   ``{'powerlaw_max': (-1., 1.), 'powerlaw_exp':
+                   (-2., 3.)}``. The full available range is
+                   automatically used otherwise.
+
+                 - Uniform priors are used for ``powerlaw_max``,
+                   ``powerlaw_exp``, and ``powerlaw_ext``.
 
         inc_phot : bool, list(str)
             Include photometric data in the fit. If a boolean, either
@@ -473,15 +487,6 @@ class FitModel:
             weighting applied. Alternatively, a dictionary can
             be used as argument, which includes the names and
             weightings of spectra and/or photometric fluxes.
-        ext_filter : str, None
-            Filter that is associated with the (optional) extinction
-            parameter, ``ism_ext``. When the argument of ``ext_filter``
-            is set to ``None``, the extinction is defined in the visual
-            (i.e. :math:`A_V`). By providing a filter name from the
-            `SVO Filter Profile Service <http://svo2.cab.inta-csic.es/
-            svo/theory/fps/>`_ as argument then the extinction
-            ``ism_ext`` is fitted in that filter instead of the
-            $V$ band.
         normal_prior : dict(str, tuple(float, float)), None
             Dictionary with normal priors for one or multiple
             parameters. The prior can be set for any of the
@@ -558,7 +563,6 @@ class FitModel:
         self.n_disk = 0
 
         self.binary_prior = binary_prior
-        self.ext_filter = ext_filter
         self.ext_model = ext_model
 
         if fit_corr is None:
@@ -574,33 +578,44 @@ class FitModel:
         else:
             self.normal_prior = normal_prior
 
-        # Teff range for which the grid will be interpolated
-
-        readmodel = ReadModel(self.model)
-        self.teff_range = readmodel.get_bounds()["teff"]
-
-        if "teff" in self.bounds and self.bounds["teff"] is not None:
-            # List with tuples for blackbody components or
-            # tuple with two tuples for a binary system
-            if isinstance(self.bounds["teff"][0], tuple):
-                teff_min = np.inf
-                teff_max = -np.inf
-
-                for teff_item in self.bounds["teff"]:
-                    if teff_item[0] < teff_min:
-                        teff_min = teff_item[0]
-
-                    if teff_item[1] > teff_max:
-                        teff_max = teff_item[1]
-
-                self.teff_range = (teff_min, teff_max)
-
-            elif self.bounds["teff"][0] != self.bounds["teff"][1]:
-                self.teff_range = self.bounds["teff"]
-
         # Models that do not require a grid interpolation
 
         self.non_interp_model = ["planck", "powerlaw"]
+
+        # Set default prior range if bounds=None
+
+        if self.model not in self.non_interp_model:
+            readmodel = ReadModel(self.model)
+
+            if self.bounds is None:
+                self.bounds = {}
+
+                param_bounds = readmodel.get_bounds()
+                for param_key, param_value in param_bounds.items():
+                    self.bounds[param_key] = param_value
+
+            # Teff range for which the grid will be interpolated
+
+            self.teff_range = readmodel.get_bounds()["teff"]
+
+            if "teff" in self.bounds and self.bounds["teff"] is not None:
+                # List with tuples for blackbody components or
+                # tuple with two tuples for a binary system
+                if isinstance(self.bounds["teff"][0], tuple):
+                    teff_min = np.inf
+                    teff_max = -np.inf
+
+                    for teff_item in self.bounds["teff"]:
+                        if teff_item[0] < teff_min:
+                            teff_min = teff_item[0]
+
+                        if teff_item[1] > teff_max:
+                            teff_max = teff_item[1]
+
+                    self.teff_range = (teff_min, teff_max)
+
+                elif self.bounds["teff"][0] != self.bounds["teff"][1]:
+                    self.teff_range = self.bounds["teff"]
 
         # Check if deprecated ism_ext parameter is used
 
@@ -1162,7 +1177,7 @@ class FitModel:
 
         # Optional parameters, either global or for each instrument/spectrum
 
-        for param_item in ["vsini", "rad_vel"]:
+        for param_item in ["vsini", "limb_dark", "rad_vel"]:
             if param_item in self.bounds:
                 if self.binary:
                     if isinstance(self.bounds[param_item][0], tuple):
@@ -1297,46 +1312,58 @@ class FitModel:
 
         # Exctinction parameters
 
-        if (
-            "lognorm_radius" in self.bounds
-            and "lognorm_sigma" in self.bounds
-            and "lognorm_ext" in self.bounds
-        ):
-            self.cross_sections, _, _ = interp_lognorm()
+        if "lognorm_ext" in self.bounds:
+            self.cross_sections, _, _ = interp_lognorm(verbose=False)
 
             self.modelpar.append("lognorm_radius")
             self.modelpar.append("lognorm_sigma")
             self.modelpar.append("lognorm_ext")
 
-            self.bounds["lognorm_radius"] = (
-                np.log10(self.bounds["lognorm_radius"][0]),
-                np.log10(self.bounds["lognorm_radius"][1]),
-            )
+            if "lognorm_radius" in self.bounds:
+                self.bounds["lognorm_radius"] = (
+                    self.bounds["lognorm_radius"][0],
+                    self.bounds["lognorm_radius"][1],
+                )
 
-        elif (
-            "powerlaw_max" in self.bounds
-            and "powerlaw_exp" in self.bounds
-            and "powerlaw_ext" in self.bounds
-        ):
-            self.cross_sections, _, _ = interp_powerlaw()
+            else:
+                self.bounds["lognorm_radius"] = (
+                    np.log10(self.cross_sections.grid[1][0]),
+                    np.log10(self.cross_sections.grid[1][-1]),
+                )
+
+            if "lognorm_sigma" not in self.bounds:
+                self.bounds["lognorm_sigma"] = (
+                    self.cross_sections.grid[2][0],
+                    self.cross_sections.grid[2][-1],
+                )
+
+        elif "powerlaw_ext" in self.bounds:
+            self.cross_sections, _, _ = interp_powerlaw(verbose=False)
 
             self.modelpar.append("powerlaw_max")
             self.modelpar.append("powerlaw_exp")
             self.modelpar.append("powerlaw_ext")
 
-            self.bounds["powerlaw_max"] = (
-                np.log10(self.bounds["powerlaw_max"][0]),
-                np.log10(self.bounds["powerlaw_max"][1]),
-            )
-
-        elif "ism_ext" in self.bounds or "ism_ext" in self.normal_prior:
-            if self.ext_filter is not None:
-                self.modelpar.append(f"phot_ext_{self.ext_filter}")
-                self.bounds[f"phot_ext_{self.ext_filter}"] = self.bounds["ism_ext"]
-                del self.bounds["ism_ext"]
+            if "powerlaw_max" in self.bounds:
+                self.bounds["powerlaw_max"] = (
+                    self.bounds["powerlaw_max"][0],
+                    self.bounds["powerlaw_max"][1],
+                )
 
             else:
-                self.modelpar.append("ism_ext")
+                self.bounds["powerlaw_max"] = (
+                    np.log10(self.cross_sections.grid[1][0]),
+                    np.log10(self.cross_sections.grid[1][-1]),
+                )
+
+            if "powerlaw_exp" not in self.bounds:
+                self.bounds["powerlaw_exp"] = (
+                    self.cross_sections.grid[2][0],
+                    self.cross_sections.grid[2][-1],
+                )
+
+        elif "ism_ext" in self.bounds or "ism_ext" in self.normal_prior:
+            self.modelpar.append("ism_ext")
 
             if "ism_red" in self.bounds or "ism_red" in self.normal_prior:
                 self.modelpar.append("ism_red")
@@ -1576,9 +1603,9 @@ class FitModel:
 
                 print(f"   - {filter_item} = {self.weights[filter_item]:.2e}")
 
-    @typechecked
+    @beartype
     def _prior_transform(
-        self, cube, bounds: Dict[str, Tuple[float, float]], cube_index: Dict[str, int]
+        self, cube, bounds: Dict[str, Tuple[Real, Real]], cube_index: Dict[str, int]
     ):
         """
         Function to transform the sampled unit cube into a
@@ -1657,13 +1684,13 @@ class FitModel:
 
         return param_out
 
-    @typechecked
+    @beartype
     def _lnlike_func(
         self,
         params,
-    ) -> Union[np.float64, float]:
+    ) -> Real:
         """
-        Function for calculating the log-likelihood for the sampled
+        Function for calculating the log-likelihood of the sampled
         parameter cube. The model spectrum will be compared with
         the photometric and spectral fluxes.
 
@@ -1766,7 +1793,32 @@ class FitModel:
 
         ln_like = 0.0
 
-        # Add normal priors to the log-likelihood function
+        # Add uniform priors for non-mandatory parameters
+        # to the log-likelihood function
+
+        if "mass" in self.bounds:
+            if "logg" in all_param and "radius" in all_param:
+                mass = logg_to_mass(all_param["logg"], all_param["radius"])
+
+                if (mass < self.bounds["mass"][0]) or (mass > self.bounds["mass"][1]):
+                    return -np.inf
+
+            else:
+                if "logg" not in all_param:
+                    warnings.warn(
+                        "The 'logg' parameter is not used "
+                        f"by the '{self.model}' model so "
+                        "the mass prior cannot be applied."
+                    )
+
+                elif "radius" not in all_param:
+                    warnings.warn(
+                        "The 'radius' parameter is not fitted "
+                        "so the mass prior cannot be applied."
+                    )
+
+        # Add normal priors for non-mandatory parameters
+        # to the log-likelihood function
 
         for prior_key, prior_value in self.normal_prior.items():
             if prior_key == "mass":
@@ -2103,7 +2155,7 @@ class FitModel:
                 )
 
                 # Only required when fitting an error inflation
-                ln_like += np.log(2.0 * np.pi * phot_var)
+                ln_like += self.weights[filter_name] * np.log(2.0 * np.pi * phot_var)
 
             else:
                 for phot_idx in range(phot_item.shape[1]):
@@ -2147,7 +2199,9 @@ class FitModel:
                     )
 
                     # Only required when fitting an error inflation
-                    ln_like += np.log(2.0 * np.pi * phot_var)
+                    ln_like += self.weights[filter_name] * np.log(
+                        2.0 * np.pi * phot_var
+                    )
 
         # Compare spectra with model
 
@@ -2196,6 +2250,20 @@ class FitModel:
                     else:
                         rot_broad_0 = None
 
+                    # Set linear limb-darkening coefficient
+
+                    if "limb_dark" in self.modelpar:
+                        limb_dark_0 = params[self.cube_index["limb_dark"]]
+
+                    elif "limb_dark_0" in self.modelpar:
+                        limb_dark_0 = params[self.cube_index["limb_dark_0"]]
+
+                    elif f"limb_dark_{spec_item}_0" in self.modelpar:
+                        limb_dark_0 = params[self.cube_index[f"limb_dark_{spec_item}_0"]]
+
+                    else:
+                        limb_dark_0 = None
+
                     # Set radial velocity
 
                     if "rad_vel" in self.modelpar:
@@ -2220,6 +2288,7 @@ class FitModel:
                         model_param=all_param_0,
                         cross_sections=self.cross_sections,
                         rot_broad=rot_broad_0,
+                        limb_dark=limb_dark_0,
                         rad_vel=rad_vel_0,
                         ext_model=self.ext_model,
                     )
@@ -2246,6 +2315,20 @@ class FitModel:
                     else:
                         rot_broad_1 = None
 
+                    # Set linear limb-darkening coefficient
+
+                    if "limb_dark" in self.modelpar:
+                        limb_dark_1 = params[self.cube_index["limb_dark"]]
+
+                    elif "limb_dark_1" in self.modelpar:
+                        limb_dark_1 = params[self.cube_index["limb_dark_1"]]
+
+                    elif f"limb_dark_{spec_item}_1" in self.modelpar:
+                        limb_dark_1 = params[self.cube_index[f"limb_dark_{spec_item}_1"]]
+
+                    else:
+                        limb_dark_1 = None
+
                     # Set radial velocity
 
                     if "rad_vel" in self.modelpar:
@@ -2270,6 +2353,7 @@ class FitModel:
                         model_param=all_param_1,
                         cross_sections=self.cross_sections,
                         rot_broad=rot_broad_1,
+                        limb_dark=limb_dark_1,
                         rad_vel=rad_vel_1,
                         ext_model=self.ext_model,
                     )
@@ -2298,6 +2382,17 @@ class FitModel:
                     else:
                         rot_broad = None
 
+                    # Set linear limb-darkening coefficient
+
+                    if "limb_dark" in self.modelpar:
+                        limb_dark = params[self.cube_index["limb_dark"]]
+
+                    elif f"limb_dark_{spec_item}" in self.modelpar:
+                        limb_dark = params[self.cube_index[f"limb_dark_{spec_item}"]]
+
+                    else:
+                        limb_dark = None
+
                     # Set radial velocity
 
                     if "rad_vel" in self.modelpar:
@@ -2323,6 +2418,7 @@ class FitModel:
                         model_wavel=self.modelspec[spec_idx].wl_points,
                         cross_sections=self.cross_sections,
                         rot_broad=rot_broad,
+                        limb_dark=limb_dark,
                         rad_vel=rad_vel,
                         ext_model=self.ext_model,
                     )
@@ -2470,7 +2566,9 @@ class FitModel:
                     @ (data_flux - model_flux)
                 )
 
-                ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
+                ln_like += np.nansum(
+                    self.weights[spec_item] * np.log(2.0 * np.pi * data_var)
+                )
 
             else:
                 if spec_item in self.fit_corr:
@@ -2500,7 +2598,9 @@ class FitModel:
                         @ (data_flux - model_flux)
                     )
 
-                    ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
+                    ln_like += np.nansum(
+                        self.weights[spec_item] * np.log(2.0 * np.pi * data_var)
+                    )
 
                 else:
                     # Calculate the log-likelihood without a covariance matrix
@@ -2511,11 +2611,13 @@ class FitModel:
                         / data_var
                     )
 
-                    ln_like += np.nansum(np.log(2.0 * np.pi * data_var))
+                    ln_like += np.nansum(
+                        self.weights[spec_item] * np.log(2.0 * np.pi * data_var)
+                    )
 
         return -0.5 * ln_like
 
-    @typechecked
+    @beartype
     def _create_attr_dict(self):
         """
         Internal function for creating a dictionary with attributes
@@ -2539,12 +2641,9 @@ class FitModel:
         if self.ext_model is not None:
             attr_dict["ext_model"] = self.ext_model
 
-        if self.ext_filter is not None:
-            attr_dict["ext_filter"] = self.ext_filter
-
         return attr_dict
 
-    @typechecked
+    @beartype
     def run_multinest(
         self,
         tag: str,
@@ -2558,7 +2657,7 @@ class FitModel:
         Function to run the ``PyMultiNest`` wrapper of the
         ``MultiNest`` sampler. While ``PyMultiNest`` can be
         installed with ``pip`` from the PyPI repository,
-        ``MultiNest`` has to to be built manually. See the
+        ``MultiNest`` has to be built manually. See the
         `PyMultiNest documentation <http://johannesbuchner.
         github.io/PyMultiNest/install.html>`_. The library
         path of ``MultiNest`` should be set to the
@@ -2670,7 +2769,7 @@ class FitModel:
         if mpi_rank == 0 and not os.path.exists(output):
             os.mkdir(output)
 
-        @typechecked
+        @beartype
         def _lnprior_multinest(cube, n_dim: int, n_param: int) -> None:
             """
             Function to transform the unit cube into the parameter
@@ -2694,13 +2793,11 @@ class FitModel:
 
             self._prior_transform(cube, self.bounds, self.cube_index)
 
-        @typechecked
-        def _lnlike_multinest(
-            params, n_dim: int, n_param: int
-        ) -> Union[float, np.float64]:
+        @beartype
+        def _lnlike_multinest(params, n_dim: int, n_param: int) -> Real:
             """
-            Function for return the log-likelihood for the
-            sampled parameter cube.
+            Function for returning the log-likelihood of
+            the sampled parameter cube.
 
             Parameters
             ----------
@@ -2746,18 +2843,16 @@ class FitModel:
         # Nested sampling log-evidence
         self.ln_z = sampling_stats["nested sampling global log-evidence"]
         self.ln_z_error = sampling_stats["nested sampling global log-evidence error"]
-        print(
-            f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
-        )
+        print(f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}")
 
         # Nested importance sampling log-evidence
-        self.imp_ln_z = sampling_stats["nested importance sampling global log-evidence"]
-        self.imp_ln_z_error = sampling_stats[
+        imp_ln_z = sampling_stats["nested importance sampling global log-evidence"]
+        imp_ln_z_error = sampling_stats[
             "nested importance sampling global log-evidence error"
         ]
         print(
             "log-evidence (importance sampling) = "
-            f"{self.imp_ln_z:.2f} +/- {self.imp_ln_z_error:.2f}"
+            f"{imp_ln_z:.2f} +/- {imp_ln_z_error:.2f}"
         )
 
         # Get the sample with the maximum likelihood
@@ -2851,7 +2946,7 @@ class FitModel:
                 attr_dict=self._create_attr_dict(),
             )
 
-    @typechecked
+    @beartype
     def run_ultranest(
         self,
         tag: str,
@@ -2951,7 +3046,7 @@ class FitModel:
         if mpi_rank == 0 and not os.path.exists(output):
             os.mkdir(output)
 
-        @typechecked
+        @beartype
         def _lnprior_ultranest(cube: np.ndarray) -> np.ndarray:
             """
             Function to transform the unit cube into the parameter
@@ -2971,8 +3066,8 @@ class FitModel:
 
             return self._prior_transform(cube, self.bounds, self.cube_index)
 
-        @typechecked
-        def _lnlike_ultranest(params: np.ndarray) -> Union[float, np.float64]:
+        @beartype
+        def _lnlike_ultranest(params: np.ndarray) -> Real:
             """
             Function for returning the log-likelihood for the
             sampled parameter cube.
@@ -3127,14 +3222,14 @@ class FitModel:
                 attr_dict=self._create_attr_dict(),
             )
 
-    @typechecked
+    @beartype
     def run_dynesty(
         self,
         tag: str,
         n_live_points: int = 1000,
         resume: bool = False,
         output: str = "dynesty/",
-        evidence_tolerance: float = 0.5,
+        evidence_tolerance: Real = 0.5,
         dynamic: bool = False,
         sample_method: str = "auto",
         bound: str = "multi",
@@ -3417,9 +3512,7 @@ class FitModel:
 
         self.ln_z = results.logz[-1]
         self.ln_z_error = results.logzerr[-1]
-        print(
-            f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}"
-        )
+        print(f"\nlog-evidence = {self.ln_z:.2f} +/- {self.ln_z_error:.2f}")
 
         # Get the sample with the maximum likelihood
 

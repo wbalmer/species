@@ -4,18 +4,19 @@ Module with utility functions for plotting data.
 
 import warnings
 
+from numbers import Real
 from string import ascii_lowercase
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple
 
 from species.core import constants
 from species.util.model_util import convert_model_name
 
 
-@typechecked
+@beartype
 def sptype_to_index(
     field_range: Tuple[str, str], spec_types: np.ndarray, check_subclass: bool
 ) -> np.ndarray:
@@ -190,7 +191,7 @@ def sptype_to_index(
     return spt_discrete
 
 
-@typechecked
+@beartype
 def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     """
     Function for formatting the model parameters to use them
@@ -355,6 +356,18 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         index = param.index("vsini_1")
         param[index] = r"$v\,\sin\,i_\mathrm{2}$ (km s$^{-1}$)"
 
+    if "limb_dark" in param:
+        index = param.index("limb_dark")
+        param[index] = r"$\epsilon$"
+
+    if "limb_dark_0" in param:
+        index = param.index("limb_dark_0")
+        param[index] = r"$\epsilon_\mathrm{1}$"
+
+    if "limb_dark_1" in param:
+        index = param.index("limb_dark_1")
+        param[index] = r"$\epsilon_\mathrm{2}$"
+
     if "rad_vel" in param:
         index = param.index("rad_vel")
         param[index] = r"$v_\mathrm{r}$ (km s$^{-1}$)"
@@ -471,17 +484,17 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     #     index = param.index("mass_2")
     #     param[index] = r"$M_\mathrm{c}$ ($M_\mathrm{J}$)"
 
-    if "entropy" in param:
-        index = param.index("entropy")
+    if "s_init" in param:
+        index = param.index("s_init")
         param[index] = r"$S_\mathrm{i}$ ($k_\mathrm{B}/\mathrm{baryon}$)"
 
-    if "entropy_1" in param:
-        index = param.index("entropy_1")
-        param[index] = r"$S_\mathrm{i,b}$ ($k_\mathrm{B}/\mathrm{baryon}$)"
-
-    if "entropy_2" in param:
-        index = param.index("entropy_2")
-        param[index] = r"$S_\mathrm{i,c}$ ($k_\mathrm{B}/\mathrm{baryon}$)"
+    # if "s_init_1" in param:
+    #     index = param.index("s_init_1")
+    #     param[index] = r"$S_\mathrm{i,b}$ ($k_\mathrm{B}/\mathrm{baryon}$)"
+    #
+    # if "s_init_2" in param:
+    #     index = param.index("s_init_2")
+    #     param[index] = r"$S_\mathrm{i,c}$ ($k_\mathrm{B}/\mathrm{baryon}$)"
 
     if "dfrac_1" in param:
         index = param.index("dfrac_1")
@@ -510,6 +523,13 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     if "mcore_2" in param:
         index = param.index("mcore_2")
         param[index] = r"$M_\mathrm{core,c}$ ($M_\mathrm{E}$)"
+
+    for i, item in enumerate(ascii_lowercase[1:]):
+        if f"s_init_{i}" in param:
+            index = param.index(f"s_init_{i}")
+            param[index] = (
+                rf"$S_\mathrm{{i,{item}}}$ ($k_\mathrm{{B}}/\mathrm{{baryon}}$)"
+            )
 
     for i, item in enumerate(ascii_lowercase[1:]):
         if f"teff_evol_{i}" in param:
@@ -704,24 +724,31 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
         print(cloud_species)
 
     for item in param:
-        from petitRADTRANS.chemistry.utils import simplify_species_list
 
         if item[-9:] == "_fraction":
+            from petitRADTRANS.chemistry.utils import simplify_species_list
+
             index = param.index(item)
             cloud_simple = simplify_species_list([item[:-9]])[0]
             param[index] = rf"$\log\,\tilde{{\mathrm{{X}}}}_\mathrm{{{cloud_simple}}}$"
 
         if item[-4:] == "_tau":
+            from petitRADTRANS.chemistry.utils import simplify_species_list
+
             index = param.index(item)
             cloud_simple = simplify_species_list([item[:-4]])[0]
             param[index] = rf"$\bar{{\tau}}_\mathrm{{{cloud_simple}}}$"
 
         if item[:11] == "log_p_base_":
+            from petitRADTRANS.chemistry.utils import simplify_species_list
+
             index = param.index(item)
             cloud_simple = simplify_species_list([item[11:-3]])[0]
             param[index] = rf"$\log\,P_\mathrm{{{cloud_simple}}}$"
 
         if item[:5] == "fsed_":
+            from petitRADTRANS.chemistry.utils import simplify_species_list
+
             index = param.index(item)
             cloud_simple = simplify_species_list([item[5:-3]])[0]
             param[index] = rf"fsed$_\mathrm{{{cloud_simple}}}$"
@@ -783,6 +810,12 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
             if item_name.find("\\_") == -1 and item_name.find("_") > 0:
                 item_name = item_name.replace("_", "\\_")
             param[i] = rf"$v\,\sin\,i_\mathrm{{{item_name}}}$ (km s$^{-1}$)"
+
+        elif item[0:10] == "limb_dark_":
+            item_name = item[10:]
+            if item_name.find("\\_") == -1 and item_name.find("_") > 0:
+                item_name = item_name.replace("_", "\\_")
+            param[i] = rf"$\epsilon_\mathrm{{{item_name}}}$"
 
         elif item[0:11] == "wavelength_":
             item_name = item[11:]
@@ -1089,7 +1122,7 @@ def update_labels(param: List[str], object_type: str = "planet") -> List[str]:
     return param
 
 
-@typechecked
+@beartype
 def quantity_unit(
     param: List[str], object_type: str
 ) -> Tuple[List[str], List[Optional[str]], List[str]]:
@@ -1373,10 +1406,15 @@ def quantity_unit(
             unit.append(r"km s$^{-1}$")
             label.append(r"$v\,\sin\,i$")
 
+        elif item == "limb_dark":
+            quantity.append("limb_dark")
+            unit.append(None)
+            label.append(r"$\epsilon$")
+
     return quantity, unit, label
 
 
-@typechecked
+@beartype
 def field_bounds_ticks(
     field_range: Tuple[str, str],
     check_subclass: bool,
@@ -1567,7 +1605,7 @@ def field_bounds_ticks(
     return bounds, ticks, labels
 
 
-@typechecked
+@beartype
 def remove_color_duplicates(
     object_names: List[str], empirical_names: np.ndarray
 ) -> List[int]:
@@ -1617,9 +1655,9 @@ def remove_color_duplicates(
     return indices
 
 
-@typechecked
+@beartype
 def create_model_label(
-    model_param: Dict[str, float],
+    model_param: Dict[str, Real],
     object_type: str,
     model_name: str,
     inc_model_name: bool,
@@ -1747,7 +1785,10 @@ def create_model_label(
             if object_type == "planet":
                 value = f"{model_param[param_item]:{param_fmt['radius']}}"
             elif object_type == "star":
-                value = f"{model_param[param_item]*constants.R_JUP/constants.R_SUN:{param_fmt['radius']}}"
+                radius_solar = (
+                    model_param[param_item] * constants.R_JUP / constants.R_SUN
+                )
+                value = f"{radius_solar:{param_fmt['radius']}}"
 
         elif param_item[:11] == "disk_radius":
             if object_type == "planet":
@@ -1760,7 +1801,10 @@ def create_model_label(
             if object_type == "planet":
                 value = f"{model_param[param_item]:{param_fmt['mass']}}"
             elif object_type == "star":
-                value = f"{model_param[param_item]*constants.M_JUP/constants.M_SUN:{param_fmt['mass']}}"
+                mass_solar = (
+                    model_param[param_item] * constants.M_JUP / constants.M_SUN
+                )
+                value = f"{mass_solar:{param_fmt['mass']}}"
 
         elif param_item == "luminosity":
             value = f"{np.log10(model_param[param_item]):{param_fmt['luminosity']}}"
@@ -1855,6 +1899,7 @@ def create_param_format(param_fmt: Optional[Dict[str, str]]) -> Dict[str, str]:
         "log_flux_scaling",
         "rad_vel",
         "vsini",
+        "limb_dark",
     ]
 
     for param_item in param_add:

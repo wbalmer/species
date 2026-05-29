@@ -4,25 +4,25 @@ Module for plotting MCMC results.
 
 import warnings
 
-from typing import List, Optional, Tuple, Union
+from numbers import Real
 
-import h5py
 import corner
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import List, Optional, Tuple, Union
 from matplotlib.ticker import ScalarFormatter
-from scipy.interpolate import RegularGridInterpolator
 from scipy.stats import norm
 
 from species.core import constants
+from species.read.read_isochrone import ReadIsochrone
+from species.read.read_model import ReadModel
 from species.util.convert_util import logg_to_mass
 from species.util.core_util import print_section
 from species.util.plot_util import update_labels
 from species.util.dust_util import (
-    check_dust_database,
     interp_lognorm,
     interp_powerlaw,
     ism_extinction,
@@ -38,13 +38,13 @@ from species.util.retrieval_util import (
 )
 
 
-@typechecked
+@beartype
 def plot_posterior(
     tag: str,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     title_fmt: Union[str, List[str]] = ".2f",
-    limits: Optional[List[Tuple[float, float]]] = None,
+    limits: Optional[List[Tuple[Real, Real]]] = None,
     max_prob: bool = False,
     vmr: bool = False,
     inc_luminosity: bool = False,
@@ -57,10 +57,15 @@ def plot_posterior(
     object_type: str = "planet",
     param_inc: Optional[List[str]] = None,
     show_priors: bool = False,
+    show_grid: bool = True,
+    kwargs_corner: Optional[dict] = None,
 ) -> mpl.figure.Figure:
     """
     Function to plot the posterior distribution of the
-    estimated model parameters.
+    model parameters. For model grids, colored ticks show
+    the grid points, which can be used to check the width
+    of the posterior distributions relative to the spacing
+    between the grid points.
 
     Parameters
     ----------
@@ -81,10 +86,7 @@ def plot_posterior(
         Axis limits of all parameters. Automatically set if the
         argument is set to ``None``.
     max_prob : bool
-        Plot the position of the sample with the maximum likelihood
-        probability. The sample may need to match with the maximum
-        posterior probability, depending on the use of any normal
-        priors.
+        Plot the position of the sample with the maximum likelihood.
     vmr : bool
         Plot the volume mixing ratios (i.e. number fractions)
         instead of the mass fractions of the retrieved species with
@@ -123,11 +125,20 @@ def plot_posterior(
         will be included if the argument is set to ``None``.
     show_priors : bool
         Plot the normal priors in the diagonal panels together with the
-        1D marginalized posterior distributions. This will only show
-        the priors that had a normal distribution, so those that were
-        set with the ``normal_prior`` parameter in
+        1D marginalized posterior distributions (default: False). This
+        will only show the priors that had a normal distribution, so
+        those that were set with the ``normal_prior`` parameter in
         :class:`~species.fit.fit_model.FitModel` and
         :class:`~species.fit.retrieval.AtmosphericRetrieval.setup_retrieval`.
+    show_grid : bool
+        Show with lines for the grid points of the atmospheric model
+        on the 1D and 2D marginalized posteriors (default: True).
+        This parameter has only an effect for results obtained with
+        :class:`~species.fit.fit_model.FitModel`.
+    kwargs_corner : dict, None
+        Dictionary with keyword arguments that can be used to adjust the
+        parameters of the `corner() function
+        <https://corner.readthedocs.io/en/latest/api/>`_ of ``corner.py``.
 
     Returns
     -------
@@ -161,6 +172,14 @@ def plot_posterior(
 
     if "sampler" in box.attributes:
         print((f"Sampler: {box.attributes['sampler']}"))
+
+    print(f"\nShow priors: {show_priors}")
+    print(f"Show grid: {show_grid}")
+
+    # Create empty dictionary if needed
+
+    if kwargs_corner is None:
+        kwargs_corner = {}
 
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
@@ -316,7 +335,7 @@ def plot_posterior(
 
     print("\nMedian parameters:")
     for param_key, param_value in box.median_sample.items():
-        if isinstance(param_value, float):
+        if isinstance(param_value, Real):
             if -0.1 < param_value < 0.1:
                 print(f"   - {param_key} = {param_value:.2e}")
             else:
@@ -333,7 +352,7 @@ def plot_posterior(
     if box.prob_sample is not None:
         print("\nSample with the maximum likelihood:")
         for param_key, param_value in box.prob_sample.items():
-            if isinstance(param_value, float):
+            if isinstance(param_value, Real):
                 if -0.1 < param_value < 0.1:
                     print(f"   - {param_key} = {param_value:.2e}")
                 else:
@@ -927,6 +946,7 @@ def plot_posterior(
         show_titles=True,
         title_fmt=None,
         title_kwargs={"fontsize": 12},
+        **kwargs_corner,
     )
 
     axes = np.array(fig.axes).reshape((ndim, ndim))
@@ -1021,6 +1041,77 @@ def plot_posterior(
                     ax.get_xaxis().set_label_coords(0.5, -0.26)
                     ax.get_yaxis().set_label_coords(-0.27, 0.5)
 
+    if show_grid:
+        if (
+            box.attributes["model_type"] == "atmosphere"
+            and box.attributes["model_name"] != "petitradtrans"
+        ):
+            read_model = ReadModel(box.attributes["model_name"])
+            grid_points = read_model.get_points()
+
+        elif (
+            box.attributes["model_type"] == "evolution"
+            and box.attributes["regular_grid"] is True
+        ):
+            read_model = ReadIsochrone(box.attributes["model_name"])
+            grid_points = read_model.get_points()
+
+        else:
+            grid_points = None
+
+        if grid_points is not None:
+            for i in range(ndim):
+                for j in range(ndim):
+                    ax = axes[i, j]
+
+                    if (i == j or i > j) and box_param[j] in grid_points:
+                        ax_ymin, ax_ymax = ax.get_ylim()
+                        y_span = ax_ymax - ax_ymin
+
+                        ax.vlines(
+                            grid_points[box_param[j]],
+                            ymin=ax_ymin,
+                            ymax=ax_ymin + 0.08 * y_span,
+                            colors="cadetblue",
+                            linestyles="solid",
+                            linewidth=0.8,
+                            zorder=1,
+                        )
+
+                        ax.vlines(
+                            grid_points[box_param[j]],
+                            ymin=ax_ymax - 0.08 * y_span,
+                            ymax=ax_ymax,
+                            colors="cadetblue",
+                            linestyles="solid",
+                            linewidth=0.8,
+                            zorder=1,
+                        )
+
+                    if i > j and box_param[i] in grid_points:
+                        ax_xmin, ax_xmax = ax.get_xlim()
+                        x_span = ax_xmax - ax_xmin
+
+                        ax.hlines(
+                            grid_points[box_param[i]],
+                            xmin=ax_xmin,
+                            xmax=ax_xmin + 0.08 * x_span,
+                            colors="cadetblue",
+                            linestyles="solid",
+                            linewidth=0.8,
+                            zorder=1,
+                        )
+
+                        ax.hlines(
+                            grid_points[box_param[i]],
+                            xmin=ax_xmax - 0.08 * x_span,
+                            xmax=ax_xmax,
+                            colors="cadetblue",
+                            linestyles="solid",
+                            linewidth=0.8,
+                            zorder=1,
+                        )
+
     if title:
         fig.suptitle(title, y=1.02, fontsize=16)
 
@@ -1033,12 +1124,12 @@ def plot_posterior(
     return fig
 
 
-@typechecked
+@beartype
 def plot_mag_posterior(
     tag: str,
     filter_name: str,
     n_samples: Optional[int] = None,
-    xlim: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
 ) -> Tuple[np.ndarray, mpl.figure.Figure]:
     """
@@ -1143,11 +1234,11 @@ def plot_mag_posterior(
     return samples, fig
 
 
-@typechecked
+@beartype
 def plot_size_distributions(
     tag: str,
     random: Optional[int] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
@@ -1180,15 +1271,12 @@ def plot_size_distributions(
     species_db = Database()
     box = species_db.get_samples(tag)
 
-    if output is None:
-        print("Plotting size distributions...", end="", flush=True)
-    else:
-        print(f"Plotting size distributions: {output}...", end="", flush=True)
+    print_section("Plot size distributions")
 
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-    if "lognorm_radius" not in box.parameters and "powerlaw_max" not in box.parameters:
+    if "lognorm_ext" not in box.parameters and "powerlaw_ext" not in box.parameters:
         raise ValueError(
             "The SamplesBox does not contain extinction parameter "
             "for a log-normal or power-law size distribution."
@@ -1200,14 +1288,19 @@ def plot_size_distributions(
         ran_index = np.random.randint(samples.shape[0], size=random)
         samples = samples[ran_index,]
 
-    if "lognorm_radius" in box.parameters:
+    print(f"Database tag: {tag}")
+    print(f"Number of samples: {samples.shape[0]}")
+
+    print(f"\nLabel offset: {offset}")
+
+    if "lognorm_ext" in box.parameters:
         log_r_index = box.parameters.index("lognorm_radius")
         sigma_index = box.parameters.index("lognorm_sigma")
 
         log_r_g = samples[:, log_r_index]
         sigma_g = samples[:, sigma_index]
 
-    if "powerlaw_max" in box.parameters:
+    if "powerlaw_ext" in box.parameters:
         r_max_index = box.parameters.index("powerlaw_max")
         exponent_index = box.parameters.index("powerlaw_exp")
 
@@ -1257,19 +1350,15 @@ def plot_size_distributions(
 
     ax.set_xscale("log")
 
-    if "powerlaw_max" in box.parameters:
+    if "powerlaw_ext" in box.parameters:
         ax.set_yscale("log")
 
     if offset is not None:
         ax.get_xaxis().set_label_coords(0.5, offset[0])
         ax.get_yaxis().set_label_coords(offset[1], 0.5)
 
-    else:
-        ax.get_xaxis().set_label_coords(0.5, -0.22)
-        ax.get_yaxis().set_label_coords(-0.09, 0.5)
-
     for i in range(samples.shape[0]):
-        if "lognorm_radius" in box.parameters:
+        if "lognorm_ext" in box.parameters:
             dn_grains, r_width, radii = log_normal_distribution(
                 10.0 ** log_r_g[i], sigma_g[i], 1000
             )
@@ -1281,38 +1370,34 @@ def plot_size_distributions(
             r_width = r_width[indices]
             radii = radii[indices]
 
-        elif "powerlaw_max" in box.parameters:
+        elif "powerlaw_ext" in box.parameters:
             dn_grains, r_width, radii = power_law_distribution(
                 exponent[i], 1e-3, 10.0 ** r_max[i], 1000
             )
 
-        ax.plot(radii, dn_grains / r_width, ls="-", lw=0.5, color="black", alpha=0.5)
+        ax.plot(radii, dn_grains / r_width, ls="-", lw=0.5, color="tab:gray", alpha=0.5)
 
     if output is None:
         plt.show()
     else:
+        print(f"Output: {output}")
         plt.savefig(output, bbox_inches="tight")
-
-    print(" [DONE]")
 
     return fig
 
 
-@typechecked
+@beartype
 def plot_extinction(
     tag: str,
     random: Optional[int] = None,
-    wavel_range: Optional[Tuple[float, float]] = None,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    wavel_range: Optional[Tuple[Real, Real]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
-    Function to plot random samples of the extinction, either from
-    fitting a size distribution of enstatite grains (``dust_radius``,
-    ``dust_sigma``, and ``dust_ext``), or from fitting ISM extinction
-    (``ism_ext`` and optionally ``ism_red``).
+    Function to plot random samples of the extinction.
 
     Parameters
     ----------
@@ -1348,19 +1433,26 @@ def plot_extinction(
     from species.data.database import Database
 
     species_db = Database()
-    box = species_db.get_samples(tag)
+    samples_box = species_db.get_samples(tag)
+    samples = samples_box.samples
 
-    if wavel_range is None:
-        wavel_range = (0.4, 10.0)
+    print_section("Plot extinction")
 
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-    samples = box.samples
-
     if random is not None:
         ran_index = np.random.randint(samples.shape[0], size=random)
         samples = samples[ran_index,]
+
+    if wavel_range is None:
+        wavel_range = (0.4, 10.0)
+
+    print(f"Database tag: {tag}")
+    print(f"Number of samples: {samples.shape[0]}")
+
+    print(f"\nWavelength range: {wavel_range}")
+    print(f"Label offset: {offset}")
 
     fig = plt.figure(figsize=(6, 3))
     gridsp = mpl.gridspec.GridSpec(1, 1)
@@ -1400,7 +1492,7 @@ def plot_extinction(
         labelbottom=True,
     )
 
-    ax.set_xlabel("Wavelength (\N{GREEK SMALL LETTER MU}m)", fontsize=12)
+    ax.set_xlabel("Wavelength (µm)", fontsize=12)
     ax.set_ylabel("Extinction (mag)", fontsize=12)
 
     if xlim is not None:
@@ -1413,108 +1505,65 @@ def plot_extinction(
         ax.get_xaxis().set_label_coords(0.5, offset[0])
         ax.get_yaxis().set_label_coords(offset[1], 0.5)
 
-    else:
-        ax.get_xaxis().set_label_coords(0.5, -0.22)
-        ax.get_yaxis().set_label_coords(-0.09, 0.5)
-
     sample_wavel = np.linspace(wavel_range[0], wavel_range[1], 100)
 
-    if (
-        "lognorm_radius" in box.parameters
-        and "lognorm_sigma" in box.parameters
-        and "lognorm_ext" in box.parameters
-    ):
-        cross_optical, dust_radius, dust_sigma = interp_lognorm([], [])
+    if "lognorm_ext" in samples_box.parameters:
+        dust_interp, _, _ = interp_lognorm(verbose=False)
 
-        log_r_index = box.parameters.index("lognorm_radius")
-        sigma_index = box.parameters.index("lognorm_sigma")
-        ext_index = box.parameters.index("lognorm_ext")
-
-        log_r_g = samples[:, log_r_index]
-        sigma_g = samples[:, sigma_index]
-        dust_ext = samples[:, ext_index]
-
-        database_path = check_dust_database()
-
-        with h5py.File(database_path, "r") as h5_file:
-            cross_section = np.asarray(
-                h5_file["dust/lognorm/mgsio3/crystalline/cross_section"]
-            )
-            wavelength = np.asarray(
-                h5_file["dust/lognorm/mgsio3/crystalline/wavelength"]
-            )
-
-        cross_interp = RegularGridInterpolator(
-            (wavelength, dust_radius, dust_sigma), cross_section
-        )
+        log_r_index = samples_box.parameters.index("lognorm_radius")
+        sigma_index = samples_box.parameters.index("lognorm_sigma")
+        ext_index = samples_box.parameters.index("lognorm_ext")
 
         for i in range(samples.shape[0]):
-            cross_tmp = cross_optical["Generic/Bessell.V"](
-                (10.0 ** log_r_g[i], sigma_g[i])
+            cross_sections = dust_interp(
+                (sample_wavel, 10.0 ** samples[i, log_r_index], samples[i, sigma_index])
             )
-
-            n_grains = dust_ext[i] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
-
-            sample_cross = np.zeros(sample_wavel.shape)
-
-            for j, item in enumerate(sample_wavel):
-                sample_cross[j] = cross_interp((item, 10.0 ** log_r_g[i], sigma_g[i]))
-
-            sample_ext = 2.5 * np.log10(np.exp(1.0)) * sample_cross * n_grains
+            sample_ext = -2.5 * np.log10(
+                np.exp(-samples[i, ext_index] * cross_sections)
+            )
 
             ax.plot(sample_wavel, sample_ext, ls="-", lw=0.5, color="black", alpha=0.5)
 
-    elif (
-        "powerlaw_max" in box.parameters
-        and "powerlaw_exp" in box.parameters
-        and "powerlaw_ext" in box.parameters
-    ):
-        cross_optical, dust_max, dust_exp = interp_powerlaw([], [])
+    elif "powerlaw_ext" in samples_box.parameters:
+        dust_interp, _, _ = interp_powerlaw(verbose=False)
 
-        r_max_index = box.parameters.index("powerlaw_max")
-        exp_index = box.parameters.index("powerlaw_exp")
-        ext_index = box.parameters.index("powerlaw_ext")
-
-        r_max = samples[:, r_max_index]
-        exponent = samples[:, exp_index]
-        dust_ext = samples[:, ext_index]
-
-        database_path = check_dust_database()
-
-        with h5py.File(database_path, "r") as h5_file:
-            cross_section = np.asarray(
-                h5_file["dust/powerlaw/mgsio3/crystalline/cross_section"]
-            )
-            wavelength = np.asarray(
-                h5_file["dust/powerlaw/mgsio3/crystalline/wavelength"]
-            )
-
-        cross_interp = RegularGridInterpolator(
-            (wavelength, dust_max, dust_exp), cross_section
-        )
+        r_max_index = samples_box.parameters.index("powerlaw_max")
+        exp_index = samples_box.parameters.index("powerlaw_exp")
+        ext_index = samples_box.parameters.index("powerlaw_ext")
 
         for i in range(samples.shape[0]):
-            cross_tmp = cross_optical["Generic/Bessell.V"](
-                (10.0 ** r_max[i], exponent[i])
+            cross_sections = dust_interp(
+                (sample_wavel, 10.0 ** samples[i, r_max_index], samples[i, exp_index])
             )
-
-            n_grains = dust_ext[i] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
-
-            sample_cross = np.zeros(sample_wavel.shape)
-
-            for j, item in enumerate(sample_wavel):
-                sample_cross[j] = cross_interp((item, 10.0 ** r_max[i], exponent[i]))
-
-            sample_ext = 2.5 * np.log10(np.exp(1.0)) * sample_cross * n_grains
+            sample_ext = -2.5 * np.log10(
+                np.exp(-samples[i, ext_index] * cross_sections)
+            )
 
             ax.plot(sample_wavel, sample_ext, ls="-", lw=0.5, color="black", alpha=0.5)
 
-    elif "ism_ext" in box.parameters:
-        ext_index = box.parameters.index("ism_ext")
+    elif "ext_av" in samples_box.parameters:
+        ext_index = samples_box.parameters.index("ext_av")
+        ext_av = samples[:, ext_index]
+
+        if "ext_rv" in samples_box.parameters:
+            rv_index = samples_box.parameters.index("ext_rv")
+            ext_rv = samples[:, rv_index]
+
+        else:
+            # Use default ISM redenning (R_V = 3.1) if ext_rv was not fitted
+            ext_rv = np.full(samples.shape[0], 3.1)
+
+        for i in range(samples.shape[0]):
+            sample_ext = ism_extinction(ext_av[i], ext_rv[i], sample_wavel)
+
+            ax.plot(sample_wavel, sample_ext, ls="-", lw=0.5, color="black", alpha=0.5)
+
+    elif "ism_ext" in samples_box.parameters:
+        ext_index = samples_box.parameters.index("ism_ext")
         ism_ext = samples[:, ext_index]
 
-        if "ism_red" in box.parameters:
-            red_index = box.parameters.index("ism_red")
+        if "ism_red" in samples_box.parameters:
+            red_index = samples_box.parameters.index("ism_red")
             ism_red = samples[:, red_index]
 
         else:
@@ -1530,15 +1579,9 @@ def plot_extinction(
         raise ValueError("The SamplesBox does not contain extinction parameters.")
 
     if output is None:
-        print("Plotting extinction...", end="", flush=True)
-    else:
-        print(f"Plotting extinction: {output}...", end="", flush=True)
-
-    if output is None:
         plt.show()
     else:
+        print(f"Output: {output}")
         plt.savefig(output, bbox_inches="tight")
-
-    print(" [DONE]")
 
     return fig

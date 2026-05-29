@@ -7,17 +7,18 @@ can be found in `Mollière et al. (2019) <https://ui.adsabs.harvard.edu
 
 import warnings
 
-from typing import Dict, List, Optional, Tuple, Union
+from numbers import Real
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import spectres
 
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 from matplotlib.ticker import MultipleLocator
 from scipy.interpolate import interp1d
 from spectres.spectral_resampling_numba import spectres_numba
-from typeguard import typechecked
 
 from species.core import constants
 from species.core.box import ModelBox, create_box
@@ -44,18 +45,18 @@ class ReadRadtrans:
     Class for generating a model spectrum with ``petitRADTRANS``.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         line_species: Optional[List[str]] = None,
         cloud_species: Optional[List[str]] = None,
         scattering: bool = False,
-        wavel_range: Optional[Tuple[float, float]] = None,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
         filter_name: Optional[str] = None,
         pressure_grid: str = "smaller",
         res_mode: str = "c-k",
-        cloud_wavel: Optional[Tuple[float, float]] = None,
-        max_press: Optional[float] = None,
+        cloud_wavel: Optional[Tuple[Real, Real]] = None,
+        max_press: Optional[Real] = None,
         pt_manual: Optional[np.ndarray] = None,
         lbl_opacity_sampling: Optional[Union[int, np.int_]] = None,
     ) -> None:
@@ -263,12 +264,12 @@ class ReadRadtrans:
         self.eq_chem = PreCalculatedEquilibriumChemistryTable()
         self.eq_chem.load()
 
-    @typechecked
+    @beartype
     def get_model(
         self,
-        model_param: Dict[str, float],
+        model_param: Dict[str, Real],
         quenching: Optional[str] = None,
-        spec_res: Optional[float] = None,
+        spec_res: Optional[Real] = None,
         wavel_resample: Optional[np.ndarray] = None,
         plot_contribution: Optional[Union[bool, str]] = False,
         temp_nodes: Optional[Union[int, np.integer]] = None,
@@ -1226,8 +1227,8 @@ class ReadRadtrans:
             extra_out=extra_out,
         )
 
-    @typechecked
-    def get_flux(self, model_param: Dict[str, float]) -> Tuple[float, None]:
+    @beartype
+    def get_flux(self, model_param: Dict[str, Real]) -> Tuple[Real, None]:
         """
         Function for calculating the filter-weighted flux density
         for the ``filter_name``.
@@ -1256,8 +1257,8 @@ class ReadRadtrans:
 
         return synphot.spectrum_to_flux(spectrum.wavelength, spectrum.flux)
 
-    @typechecked
-    def get_magnitude(self, model_param: Dict[str, float]) -> Tuple[float, None]:
+    @beartype
+    def get_magnitude(self, model_param: Dict[str, Real]) -> Tuple[Real, None]:
         """
         Function for calculating the magnitude for the ``filter_name``.
 

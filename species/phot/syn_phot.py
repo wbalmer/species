@@ -7,12 +7,13 @@ import math
 import warnings
 import configparser
 
-from typing import List, Optional, Union, Tuple
+from numbers import Real
 
 import h5py
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import List, Optional, Union, Tuple
 
 from species.data.spec_data.spec_vega import add_vega
 from species.read.read_filter import ReadFilter
@@ -35,8 +36,8 @@ class SyntheticPhotometry:
     <https://species.readthedocs.io/en/latest/configuration.html>`_.
     """
 
-    @typechecked
-    def __init__(self, filter_name: str, zero_point: Optional[float] = None) -> None:
+    @beartype
+    def __init__(self, filter_name: str, zero_point: Optional[Real] = None) -> None:
         """
         Parameters
         ----------
@@ -69,7 +70,10 @@ class SyntheticPhotometry:
         self.filter_interp = None
         self.wavel_range = None
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = configparser.ConfigParser()
         config.read(config_file)
@@ -95,8 +99,8 @@ class SyntheticPhotometry:
                 f"parameter is set to {self.vega_mag}."
             )
 
-    @typechecked
-    def calc_zero_point(self) -> Union[float, np.float64]:
+    @beartype
+    def calc_zero_point(self) -> Real:
         """
         Internal function for calculating the zero point of the
         provided ``filter_name``. The zero point is here defined
@@ -137,16 +141,16 @@ class SyntheticPhotometry:
 
         return self.spectrum_to_flux(wavelength_crop, flux_crop)[0]
 
-    @typechecked
+    @beartype
     def spectrum_to_flux(
         self,
         wavelength: np.ndarray,
         flux: np.ndarray,
         error: Optional[np.ndarray] = None,
-        threshold: Optional[float] = 0.01,
+        threshold: Optional[Real] = 0.01,
     ) -> Tuple[
-        Union[float, np.float32, np.float64],
-        Optional[Union[float, np.float32, np.float64]],
+        Real,
+        Optional[Real],
     ]:
         """
         Function for calculating the average flux from a spectrum and
@@ -365,17 +369,17 @@ class SyntheticPhotometry:
 
         return syn_flux, error_flux
 
-    @typechecked
+    @beartype
     def spectrum_to_magnitude(
         self,
         wavelength: np.ndarray,
         flux: np.ndarray,
         error: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
-        parallax: Optional[Tuple[float, Optional[float]]] = None,
-        distance: Optional[Tuple[float, Optional[float]]] = None,
-        threshold: Optional[float] = 0.01,
+        parallax: Optional[Tuple[Real, Optional[Real]]] = None,
+        distance: Optional[Tuple[Real, Optional[Real]]] = None,
+        threshold: Optional[Real] = 0.01,
     ) -> Tuple[
-        Tuple[float, Optional[float]], Optional[Tuple[Optional[float], Optional[float]]]
+        Tuple[Real, Optional[Real]], Optional[Tuple[Optional[Real], Optional[Real]]]
     ]:
         """
         Function for calculating the apparent and absolute magnitude
@@ -501,15 +505,15 @@ class SyntheticPhotometry:
 
         return (app_mag, error_app_mag), (abs_mag, error_abs_mag)
 
-    @typechecked
+    @beartype
     def magnitude_to_flux(
         self,
-        magnitude: float,
-        error: Optional[float] = None,
-        zp_flux: Optional[float] = None,
+        magnitude: Real,
+        error: Optional[Real] = None,
+        zp_flux: Optional[Real] = None,
     ) -> Tuple[
-        Union[float, np.float32, np.float64],
-        Optional[Union[float, np.float32, np.float64]],
+        Real,
+        Optional[Real],
     ]:
         """
         Function for converting a magnitude to a flux.
@@ -568,25 +572,21 @@ class SyntheticPhotometry:
 
         return flux, error_flux
 
-    @typechecked
+    @beartype
     def flux_to_magnitude(
         self,
-        flux: float,
-        error: Optional[Union[float, np.ndarray]] = None,
+        flux: Real,
+        error: Optional[Union[Real, np.ndarray]] = None,
         parallax: Optional[
-            Union[
-                Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
-            ]
+            Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]
         ] = None,
         distance: Optional[
-            Union[
-                Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]
-            ]
+            Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]]
         ] = None,
     ) -> Tuple[
-        Union[Tuple[float, Optional[float]], Tuple[np.ndarray, Optional[np.ndarray]]],
+        Union[Tuple[Real, Optional[Real]], Tuple[np.ndarray, Optional[np.ndarray]]],
         Union[
-            Tuple[Optional[float], Optional[float]],
+            Tuple[Optional[Real], Optional[Real]],
             Tuple[Optional[np.ndarray], Optional[np.ndarray]],
         ],
     ]:

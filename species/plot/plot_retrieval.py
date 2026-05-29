@@ -5,18 +5,19 @@ Module for plotting atmospheric retrieval results.
 import sys
 import warnings
 
-from typing import Optional, Tuple
+from numbers import Real
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import Optional, Tuple
 from matplotlib.colorbar import Colorbar
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import MultipleLocator
 from scipy.interpolate import interp1d
 from scipy.stats import lognorm
-from typeguard import typechecked
 
 from species.read.read_radtrans import ReadRadtrans
 from species.util.retrieval_util import (
@@ -29,14 +30,14 @@ from species.util.retrieval_util import (
 )
 
 
-@typechecked
+@beartype
 def plot_pt_profile(
     tag: str,
     random: Optional[int] = 100,
     envelope: bool = False,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
     radtrans: Optional[ReadRadtrans] = None,
     extra_axis: Optional[str] = None,
@@ -830,11 +831,11 @@ def plot_pt_profile(
     return fig
 
 
-@typechecked
+@beartype
 def plot_opacities(
     tag: str,
     radtrans: ReadRadtrans,
-    offset: Optional[Tuple[float, float]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
@@ -905,7 +906,7 @@ def plot_opacities(
         (radtrans.rt_object.frequencies.shape[0], radtrans.rt_object.pressures.shape[0])
     )
 
-    for item in radtrans.rt_object.lines_loaded_opacities['opacity_grid'].values():
+    for item in radtrans.rt_object.lines_loaded_opacities["opacity_grid"].values():
         opacity_line += item
 
     # Continuum opacities
@@ -1316,10 +1317,10 @@ def plot_opacities(
     return fig
 
 
-@typechecked
+@beartype
 def plot_clouds(
     tag: str,
-    offset: Optional[Tuple[float, float]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
     radtrans: Optional[ReadRadtrans] = None,
     composition: str = "MgSiO3",
@@ -1528,12 +1529,12 @@ def plot_clouds(
     return fig
 
 
-@typechecked
+@beartype
 def plot_abundances(
     tag: str,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     output: Optional[str] = None,
     legend: Optional[dict] = None,
     radtrans: Optional[ReadRadtrans] = None,

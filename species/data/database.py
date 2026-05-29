@@ -7,8 +7,8 @@ import os
 import warnings
 
 from configparser import ConfigParser
+from numbers import Real
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 import astropy.units as u
 import h5py
@@ -18,9 +18,10 @@ import pooch
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.units.quantity import Quantity
+from beartype import beartype
+from beartype.typing import Any, Dict, List, Optional, Tuple, Union
 from scipy.integrate import simpson
 from tqdm.auto import tqdm
-from typeguard import typechecked
 
 from species.core import constants
 from species.core.box import ObjectBox, ModelBox, SamplesBox, SpectrumBox, create_box
@@ -32,7 +33,7 @@ class Database:
     Class with reading and writing functionalities for the HDF5 database.
     """
 
-    @typechecked
+    @beartype
     def __init__(self) -> None:
         """
         Returns
@@ -41,7 +42,10 @@ class Database:
             None
         """
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = ConfigParser()
         config.read(config_file)
@@ -49,7 +53,7 @@ class Database:
         self.database = config["species"]["database"]
         self.data_folder = config["species"]["data_folder"]
 
-    @typechecked
+    @beartype
     def list_content(self) -> None:
         """
         Function for listing the content of the HDF5 database. The
@@ -65,7 +69,7 @@ class Database:
 
         print_section("List database content")
 
-        @typechecked
+        @beartype
         def _descend(
             h5_object: Union[
                 h5py._hl.files.File, h5py._hl.group.Group, h5py._hl.dataset.Dataset
@@ -120,7 +124,7 @@ class Database:
         with h5py.File(self.database, "r") as hdf_file:
             _descend(hdf_file)
 
-    @typechecked
+    @beartype
     def list_companions(self, verbose: bool = False) -> List[str]:
         """
         Function for printing an overview of the companion data that
@@ -198,7 +202,7 @@ class Database:
 
         return comp_names
 
-    @typechecked
+    @beartype
     def available_models(self, verbose: bool = True) -> Dict:
         """
         Function for printing an overview of the available model grids
@@ -266,7 +270,7 @@ class Database:
 
         return model_data
 
-    @typechecked
+    @beartype
     def delete_data(self, data_set: str) -> None:
         """
         Function for deleting a dataset from the HDF5 database.
@@ -299,7 +303,7 @@ class Database:
                     f"The dataset {data_set} is not found in {self.database}."
                 )
 
-    @typechecked
+    @beartype
     def add_companion(
         self,
         name: Optional[Union[Optional[str], Optional[List[str]]]] = None,
@@ -349,7 +353,7 @@ class Database:
             print(f"Add companion: {name}")
 
         for item in name:
-            spec_dict = companion_spectra(self.data_folder, item, verbose=verbose)
+            spec_dict = companion_spectra(Path(self.data_folder), item, verbose=verbose)
 
             parallax = None
 
@@ -401,7 +405,7 @@ class Database:
                 verbose=verbose,
             )
 
-    @typechecked
+    @beartype
     def add_dust(self) -> None:
         """
         Function for adding optical constants of MgSiO3 and Fe, and
@@ -441,7 +445,7 @@ class Database:
             add_optical_constants(self.data_folder, hdf5_file)
             add_cross_sections(self.data_folder, hdf5_file)
 
-    @typechecked
+    @beartype
     def add_accretion(self) -> None:
         """
         Function for adding the coefficients for converting line
@@ -468,7 +472,7 @@ class Database:
 
             add_accretion_relation(self.data_folder, hdf5_file)
 
-    @typechecked
+    @beartype
     def add_filter(
         self,
         filter_name: str,
@@ -530,6 +534,7 @@ class Database:
                 dset = hdf5_file.create_dataset(
                     f"filters/{filter_name}",
                     data=np.column_stack((wavelength, transmission)),
+                    dtype="f8",
                 )
 
                 dset.attrs["det_type"] = str(detector_type)
@@ -549,7 +554,7 @@ class Database:
         if verbose:
             print(" [DONE]")
 
-    @typechecked
+    @beartype
     def add_isochrones(
         self,
         model: Optional[str] = None,
@@ -562,12 +567,13 @@ class Database:
         Parameters
         ----------
         model : str, None
-            Evolutionary model ('ames', 'atmo', 'baraffe2015',
-            'bt-settl', 'linder2019', 'nextgen', 'parsec',
-            'saumon2008', 'sonora-bobcat', 'sonora-diamondback').
-            Isochrones will be automatically downloaded.
-            Alternatively, the ``filename`` parameter can be used
-            in combination with ``tag``.
+            Evolutionary model ('ames', 'atmo', 'atmo-chabrier2023',
+            'baraffe2015', 'bt-settl', linder2019', 'marleau2014',
+            'nextgen', 'parsec', 'saumon2008', 'sonora-bobcat',
+            'sonora-diamondback', 'spiegel2012'). Isochrones will
+            be automatically downloaded. Alternatively, the
+            ``filename`` parameter can be used in combination
+            with ``tag``.
         filename : str, None
             Filename with the isochrone data. The argument of
             ``model`` will be ignored by setting the argument
@@ -601,14 +607,17 @@ class Database:
         avail_models = [
             "ames",
             "atmo",
+            "atmo-chabrier2023",
             "baraffe2015",
             "bt-settl",
             "linder2019",
+            "marleau2014",
             "nextgen",
             "parsec",
             "saumon2008",
             "sonora-bobcat",
             "sonora-diamondback",
+            "spiegel2012",
         ]
 
         if filename is None and model not in avail_models:
@@ -641,11 +650,23 @@ class Database:
                 if "isochrones/bt-settl" in hdf5_file:
                     del hdf5_file["isochrones/bt-settl"]
 
+            elif model == "atmo-chabrier2023":
+                if "isochrones/atmo-ceq-chabrier2023" in hdf5_file:
+                    del hdf5_file["isochrones/atmo-ceq-chabrier2023"]
+                if "isochrones/atmo-neq-weak-chabrier2023" in hdf5_file:
+                    del hdf5_file["isochrones/atmo-neq-weak-chabrier2023"]
+                if "isochrones/atmo-neq-strong-chabrier2023" in hdf5_file:
+                    del hdf5_file["isochrones/atmo-neq-strong-chabrier2023"]
+
             elif model == "linder2019":
                 if "isochrones" in hdf5_file:
                     for iso_item in list(hdf5_file["isochrones"]):
                         if iso_item[:10] == "linder2019":
                             del hdf5_file[f"isochrones/{iso_item}"]
+
+            elif model == "marleau2014":
+                if "isochrones/marleau2014" in hdf5_file:
+                    del hdf5_file["isochrones/marleau2014"]
 
             elif model == "nextgen":
                 if "isochrones/nextgen" in hdf5_file:
@@ -692,6 +713,19 @@ class Database:
                     if f"isochrones/sonora-diamondback-{iso_item}" in hdf5_file:
                         del hdf5_file[f"isochrones/sonora-diamondback-{iso_item}"]
 
+            elif model == "spiegel2012":
+                if "isochrones/spiegel2012-hybrid+0.0" in hdf5_file:
+                    del hdf5_file["isochrones/spiegel2012-hybrid+0.0"]
+
+                if "isochrones/spiegel2012-hybrid+0.5" in hdf5_file:
+                    del hdf5_file["isochrones/spiegel2012-hybrid+0.5"]
+
+                if "isochrones/spiegel2012-cloudfree+0.0" in hdf5_file:
+                    del hdf5_file["isochrones/spiegel2012-cloudfree+0.0"]
+
+                if "isochrones/spiegel2012-cloudfree+0.5" in hdf5_file:
+                    del hdf5_file["isochrones/spiegel2012-cloudfree+0.5"]
+
             else:
                 if f"isochrones/{tag}" in hdf5_file:
                     del hdf5_file[f"isochrones/{tag}"]
@@ -700,16 +734,16 @@ class Database:
                 self.data_folder, hdf5_file, model, filename=filename, tag=tag
             )
 
-    @typechecked
+    @beartype
     def add_model(
         self,
         model: str,
-        wavel_range: Optional[Tuple[float, float]] = None,
-        wavel_sampling: Optional[float] = None,
-        teff_range: Optional[Tuple[float, float]] = None,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
+        wavel_sampling: Optional[Real] = None,
+        teff_range: Optional[Tuple[Real, Real]] = None,
         unpack_tar: bool = True,
-        fit_from: Optional[float] = None,
-        extend_from: Optional[float] = None,
+        fit_from: Optional[Real] = None,
+        extend_from: Optional[Real] = None,
     ) -> None:
         """
         Function for adding a grid of model spectra to the database.
@@ -806,15 +840,15 @@ class Database:
                 extend_from=extend_from,
             )
 
-    @typechecked
+    @beartype
     def add_custom_model(
         self,
         model: str,
         data_path: Union[str, Path],
         parameters: List[str],
-        wavel_range: Optional[Tuple[float, float]] = None,
-        wavel_sampling: Optional[float] = None,
-        teff_range: Optional[Tuple[float, float]] = None,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
+        wavel_sampling: Optional[Real] = None,
+        teff_range: Optional[Tuple[Real, Real]] = None,
     ) -> None:
         """
         Function for adding a custom grid of model spectra to the
@@ -891,27 +925,26 @@ class Database:
                 wavel_sampling,
             )
 
-    @typechecked
+    @beartype
     def add_object(
         self,
         object_name: str,
-        parallax: Optional[Tuple[float, float]] = None,
-        distance: Optional[Tuple[float, float]] = None,
+        parallax: Optional[Tuple[Real, Real]] = None,
         app_mag: Optional[
-            Dict[str, Union[Tuple[float, float], List[Tuple[float, float]]]]
+            Dict[str, Union[Tuple[Real, Real], List[Tuple[Real, Real]]]]
         ] = None,
-        flux_density: Optional[Dict[str, Tuple[float, float]]] = None,
+        flux_density: Optional[Dict[str, Tuple[Real, Real]]] = None,
         spectrum: Optional[
             Dict[
                 str,
                 Tuple[
                     Union[str, np.ndarray],
                     Optional[Union[str, np.ndarray]],
-                    Optional[float],
+                    Optional[Real],
                 ],
             ]
         ] = None,
-        deredden: Optional[Union[Dict[str, float], float]] = None,
+        deredden: Optional[Union[Dict[str, Real], Real]] = None,
         verbose: bool = True,
         units: Optional[Dict[str, Union[str, Tuple[str, str]]]] = None,
     ) -> None:
@@ -926,11 +959,6 @@ class Database:
         parallax : tuple(float, float), None
             Parallax and uncertainty (mas). Not stored if the argument
             is set to ``None``.
-        distance : tuple(float, float), None
-            Distance and uncertainty (pc). Not stored if the argument
-            is set to ``None``. This parameter is deprecated and will
-            be removed in a future release. Please use the ``parallax``
-            parameter instead.
         app_mag : dict, None
             Dictionary with the filter names, apparent magnitudes, and
             uncertainties. For example, ``{'Paranal/NACO.Lp': (15.,
@@ -1007,6 +1035,8 @@ class Database:
             None
         """
 
+        from species.read.read_filter import ReadFilter
+
         if verbose:
             print_section("Add object")
             print(f"Object name: {object_name}")
@@ -1022,10 +1052,12 @@ class Database:
         # will also open the HDF5 database
 
         if app_mag is not None:
-            from species.read.read_filter import ReadFilter
-
             for mag_item in app_mag:
                 read_filt = ReadFilter(mag_item)
+
+        if flux_density is not None:
+            for flux_item in flux_density:
+                read_filt = ReadFilter(flux_item)
 
         if deredden is None:
             deredden = {}
@@ -1037,9 +1069,9 @@ class Database:
                 if "spectra/calibration/vega" not in hdf5_file:
                     add_vega(self.data_folder, hdf5_file)
 
-                for item in app_mag:
-                    if f"filters/{item}" not in hdf5_file:
-                        self.add_filter(item, verbose=verbose)
+                for mag_item in app_mag:
+                    if f"filters/{mag_item}" not in hdf5_file:
+                        self.add_filter(mag_item, verbose=verbose)
 
         if flux_density is not None:
             from species.data.spec_data.spec_vega import add_vega
@@ -1048,9 +1080,9 @@ class Database:
                 if "spectra/calibration/vega" not in hdf5_file:
                     add_vega(self.data_folder, hdf5_file)
 
-            for item in flux_density:
-                if f"filters/{item}" not in hdf5_file:
-                    self.add_filter(item, verbose=verbose)
+                for flux_item in flux_density:
+                    if f"filters/{flux_item}" not in hdf5_file:
+                        self.add_filter(flux_item, verbose=verbose)
 
         hdf5_file = h5py.File(self.database, "a")
 
@@ -1068,33 +1100,21 @@ class Database:
                 del hdf5_file[f"objects/{object_name}/parallax"]
 
             hdf5_file.create_dataset(
-                f"objects/{object_name}/parallax", data=parallax
+                f"objects/{object_name}/parallax", data=parallax, dtype="f8"
             )  # (mas)
-
-        if distance is not None:
-            if verbose:
-                print(f"Distance (pc) = {distance[0]:.2f} +/- {distance[1]:.2f}")
-
-            if f"objects/{object_name}/distance" in hdf5_file:
-                del hdf5_file[f"objects/{object_name}/distance"]
-
-            hdf5_file.create_dataset(
-                f"objects/{object_name}/distance", data=distance
-            )  # (pc)
 
         flux = {}
         error = {}
         dered_phot = {}
+        mean_wavel = {}
 
         if app_mag is not None:
             if verbose:
                 print("\nMagnitudes:")
 
-            from species.read.read_filter import ReadFilter
-
             for mag_item in app_mag:
                 read_filt = ReadFilter(mag_item)
-                mean_wavel = read_filt.mean_wavelength()
+                mean_wavel[mag_item] = read_filt.mean_wavelength()
 
                 if isinstance(deredden, float) or mag_item in deredden:
                     from species.util.dust_util import ism_extinction
@@ -1201,7 +1221,9 @@ class Database:
                     if verbose:
                         print(f"   - {mag_item}:")
 
-                        print(f"      - Mean wavelength (um) = {mean_wavel:.4e}")
+                        print(
+                            f"      - Mean wavelength (um) = {mean_wavel[mag_item]:.4e}"
+                        )
 
                         print(
                             f"      - Apparent magnitude = {app_mag[mag_item][0]:.2f} +/- "
@@ -1244,7 +1266,9 @@ class Database:
                         app_mag_item = (dered_mag, app_mag[mag_item][i][1])
 
                         if verbose:
-                            print(f"      - Mean wavelength (um) = {mean_wavel:.4e}")
+                            print(
+                                f"      - Mean wavelength (um) = {mean_wavel[mag_item]:.4e}"
+                            )
 
                             print(
                                 f"      - Apparent magnitude = {app_mag_item[0]:.2f} +/- "
@@ -1271,7 +1295,7 @@ class Database:
 
                 # (mag), (mag), (W m-2 um-1), (W m-2 um-1)
                 dset = hdf5_file.create_dataset(
-                    f"objects/{object_name}/{mag_item}", data=data
+                    f"objects/{object_name}/{mag_item}", data=data, dtype="f8"
                 )
 
                 dset.attrs["n_phot"] = n_phot
@@ -1280,11 +1304,9 @@ class Database:
             if verbose:
                 print("\nFlux densities:")
 
-            from species.read.read_filter import ReadFilter
-
             for flux_item in flux_density:
                 read_filt = ReadFilter(flux_item)
-                mean_wavel = read_filt.mean_wavelength()
+                mean_wavel[flux_item] = read_filt.mean_wavelength()
 
                 if isinstance(deredden, float) or flux_item in deredden:
                     warnings.warn(
@@ -1310,7 +1332,7 @@ class Database:
                     if flux_item in units:
                         from species.util.data_util import convert_units
 
-                        flux_in = np.array([[mean_wavel, data[2], data[3]]])
+                        flux_in = np.array([[mean_wavel[flux_item], data[2], data[3]]])
                         flux_out = convert_units(
                             flux_in, ("um", units[flux_item]), convert_from=True
                         )
@@ -1319,14 +1341,16 @@ class Database:
 
                     if verbose:
                         print(f"   - {flux_item}:")
-                        print(f"      - Mean wavelength (um) = {mean_wavel:.4e}")
+                        print(
+                            f"      - Mean wavelength (um) = {mean_wavel[flux_item]:.4e}"
+                        )
                         print(
                             f"      - Flux (W m-2 um-1) = {data[2]:.2e} +/- {data[3]:.2e}"
                         )
 
                     # None, None, (W m-2 um-1), (W m-2 um-1)
                     dset = hdf5_file.create_dataset(
-                        f"objects/{object_name}/{flux_item}", data=data
+                        f"objects/{object_name}/{flux_item}", data=data, dtype="f8"
                     )
 
                     dset.attrs["n_phot"] = 1
@@ -1343,6 +1367,12 @@ class Database:
             spec_nan = {}
 
             for spec_item, spec_value in spectrum.items():
+                if "/" in spec_item:
+                    raise ValueError(
+                        "Spectrum names can't include a slash as "
+                        f"character. Please adjust '{spec_item}'."
+                    )
+
                 if f"objects/{object_name}/spectrum/{spec_item}" in hdf5_file:
                     del hdf5_file[f"objects/{object_name}/spectrum/{spec_item}"]
 
@@ -1671,17 +1701,20 @@ class Database:
                 hdf5_file.create_dataset(
                     f"objects/{object_name}/spectrum/{spec_item}/spectrum",
                     data=read_spec[spec_item],
+                    dtype="f8",
                 )
 
                 if read_cov[spec_item] is not None:
                     hdf5_file.create_dataset(
                         f"objects/{object_name}/spectrum/{spec_item}/covariance",
                         data=read_cov[spec_item],
+                        dtype="f8",
                     )
 
                     hdf5_file.create_dataset(
                         f"objects/{object_name}/spectrum/{spec_item}/inv_covariance",
                         data=np.linalg.inv(read_cov[spec_item]),
+                        dtype="f8",
                     )
 
                 dset = hdf5_file[f"objects/{object_name}/spectrum/{spec_item}"]
@@ -1694,11 +1727,11 @@ class Database:
                 else:
                     if verbose:
                         print(f"      - {spec_item}: {spec_value[2]:.1f}")
-                    dset.attrs["specres"] = spec_value[2]
+                    dset.attrs["specres"] = float(spec_value[2])
 
         hdf5_file.close()
 
-    @typechecked
+    @beartype
     def add_simple_object(
         self,
         object_name: str,
@@ -1989,7 +2022,7 @@ class Database:
             verbose=False,
         )
 
-    @typechecked
+    @beartype
     def add_photometry(self, phot_library: str) -> None:
         """
         Function for adding a photometry library to the database.
@@ -2028,14 +2061,14 @@ class Database:
 
                 add_jwst_ydwarfs(self.data_folder, hdf5_file)
 
-    @typechecked
+    @beartype
     def add_calibration(
         self,
         tag: str,
         filename: Optional[str] = None,
         data: Optional[np.ndarray] = None,
         units: Optional[Dict[str, str]] = None,
-        scaling: Optional[Tuple[float, float]] = None,
+        scaling: Optional[Tuple[Real, Real]] = None,
     ) -> None:
         """
         Function for adding a calibration spectrum to the database.
@@ -2176,14 +2209,16 @@ class Database:
         print(f"Adding calibration spectrum: {tag}...", end="", flush=True)
 
         hdf5_file.create_dataset(
-            f"spectra/calibration/{tag}", data=np.vstack((wavelength, flux, error))
+            f"spectra/calibration/{tag}",
+            data=np.vstack((wavelength, flux, error)),
+            dtype="f8",
         )
 
         hdf5_file.close()
 
         print(" [DONE]")
 
-    @typechecked
+    @beartype
     def add_spectra(
         self, spec_library: str, sptypes: Optional[List[str]] = None
     ) -> None:
@@ -2222,7 +2257,7 @@ class Database:
 
             add_spec_library(self.data_folder, hdf5_file, spec_library, sptypes)
 
-    @typechecked
+    @beartype
     def add_samples(
         self,
         tag: str,
@@ -2230,9 +2265,9 @@ class Database:
         samples: np.ndarray,
         ln_prob: np.ndarray,
         modelpar: List[str],
-        bounds: Dict[str, Tuple[float, float]],
-        normal_prior: Dict[str, Tuple[float, float]],
-        fixed_param: Dict[str, float],
+        bounds: Dict[str, Tuple[Real, Real]],
+        normal_prior: Dict[str, Tuple[Real, Real]],
+        fixed_param: Dict[str, Real],
         spec_labels: Optional[List[str]] = None,
         attr_dict: Optional[Dict] = None,
     ):
@@ -2246,7 +2281,7 @@ class Database:
         tag : str
             Database tag.
         sampler : str
-            Sampler ('emcee', 'multinest', 'ultranest', 'dynesty').
+            Sampler ('multinest', 'ultranest', 'dynesty').
         samples : np.ndarray
             Samples of the posterior.
         ln_prob : np.ndarray
@@ -2264,7 +2299,7 @@ class Database:
             additional scaling parameter. Not used if set to ``None``.
         attr_dict : dict, None
             Dictionary with data that will be stored as attributes
-            of the dataset with samples.
+            of the dataset with samples. Not used if set to ``None``.
 
         Returns
         -------
@@ -2285,20 +2320,24 @@ class Database:
             if f"results/fit/{tag}" in hdf5_file:
                 del hdf5_file[f"results/fit/{tag}"]
 
-            dset = hdf5_file.create_dataset(f"results/fit/{tag}/samples", data=samples)
-            hdf5_file.create_dataset(f"results/fit/{tag}/ln_prob", data=ln_prob)
+            dset = hdf5_file.create_dataset(
+                f"results/fit/{tag}/samples", data=samples, dtype="f8"
+            )
+            hdf5_file.create_dataset(
+                f"results/fit/{tag}/ln_prob", data=ln_prob, dtype="f8"
+            )
 
             for key, value in bounds.items():
                 group_path = f"results/fit/{tag}/bounds/{key}"
-                hdf5_file.create_dataset(group_path, data=value)
+                hdf5_file.create_dataset(group_path, data=value, dtype="f8")
 
             for key, value in normal_prior.items():
                 group_path = f"results/fit/{tag}/normal_prior/{key}"
-                hdf5_file.create_dataset(group_path, data=value)
+                hdf5_file.create_dataset(group_path, data=value, dtype="f8")
 
             for key, value in fixed_param.items():
                 group_path = f"results/fit/{tag}/fixed_param/{key}"
-                hdf5_file.create_dataset(group_path, data=value)
+                hdf5_file.create_dataset(group_path, data=value, dtype="f8")
 
             if "model_type" in attr_dict:
                 dset.attrs["model_type"] = attr_dict["model_type"]
@@ -2342,24 +2381,10 @@ class Database:
 
             dset.attrs["n_scaling"] = int(count_scaling)
 
-            # print("\nIntegrated autocorrelation time:")
-            #
-            # from emcee.autocorr import integrated_time
-            #
-            # for i, item in enumerate(modelpar):
-            #     auto_corr = integrated_time(samples[:, i], quiet=True)[0]
-            #
-            #     if item in fixed_param:
-            #         print(f"   - {item}: fixed")
-            #     else:
-            #         print(f"   - {item}: {auto_corr:.2f}")
-            #
-            #     dset.attrs[f"autocorrelation{i}"] = float(auto_corr)
-
             for key, value in attr_dict.items():
                 dset.attrs[key] = value
 
-    @typechecked
+    @beartype
     def get_probable_sample(
         self,
         tag: str,
@@ -2450,7 +2475,7 @@ class Database:
 
         return prob_sample
 
-    @typechecked
+    @beartype
     def get_median_sample(
         self,
         tag: str,
@@ -2535,7 +2560,7 @@ class Database:
 
         return median_sample
 
-    @typechecked
+    @beartype
     def get_compare_sample(self, tag: str, verbose: bool = True) -> Dict[str, float]:
         """
         Function for extracting the sample parameters for which
@@ -2602,13 +2627,13 @@ class Database:
 
         return model_param
 
-    @typechecked
+    @beartype
     def get_mcmc_spectra(
         self,
         tag: str,
         random: Optional[int] = None,
-        wavel_range: Optional[Union[Tuple[float, float], str]] = None,
-        spec_res: Optional[float] = None,
+        wavel_range: Optional[Union[Tuple[Real, Real], str]] = None,
+        spec_res: Optional[Real] = None,
         wavel_resample: Optional[np.ndarray] = None,
     ) -> Union[
         Union[List[ModelBox], List[SpectrumBox]],
@@ -2794,7 +2819,7 @@ class Database:
 
             if model_type in ["model", "atmosphere"]:
                 if model_name == "planck":
-                    specbox = readmodel.get_spectrum(
+                    spec_box = readmodel.get_spectrum(
                         model_param,
                         spec_res,
                         wavel_resample=wavel_resample,
@@ -2810,7 +2835,7 @@ class Database:
 
                     from species.util.model_util import powerlaw_spectrum
 
-                    specbox = powerlaw_spectrum(wavel_range, model_param)
+                    spec_box = powerlaw_spectrum(wavel_range, model_param)
 
                 else:
                     from species.util.model_util import binary_to_single
@@ -2818,7 +2843,7 @@ class Database:
                     if binary:
                         param_0 = binary_to_single(model_param, 0)
 
-                        specbox_0 = readmodel.get_model(
+                        spec_box_0 = readmodel.get_model(
                             param_0,
                             spec_res=spec_res,
                             wavel_resample=wavel_resample,
@@ -2827,7 +2852,7 @@ class Database:
 
                         param_1 = binary_to_single(model_param, 1)
 
-                        specbox_1 = readmodel.get_model(
+                        spec_box_1 = readmodel.get_model(
                             param_1,
                             spec_res=spec_res,
                             wavel_resample=wavel_resample,
@@ -2839,24 +2864,24 @@ class Database:
 
                         if "spec_weight" in model_param:
                             flux_comb = (
-                                model_param["spec_weight"] * specbox_0.flux
-                                + (1.0 - model_param["spec_weight"]) * specbox_1.flux
+                                model_param["spec_weight"] * spec_box_0.flux
+                                + (1.0 - model_param["spec_weight"]) * spec_box_1.flux
                             )
 
                         else:
-                            flux_comb = specbox_0.flux + specbox_1.flux
+                            flux_comb = spec_box_0.flux + spec_box_1.flux
 
-                        specbox = create_box(
+                        spec_box = create_box(
                             boxtype="model",
                             model=model_name,
-                            wavelength=specbox_0.wavelength,
+                            wavelength=spec_box_0.wavelength,
                             flux=flux_comb,
                             parameters=model_param,
                             quantity="flux",
                         )
 
                     else:
-                        specbox = readmodel.get_model(
+                        spec_box = readmodel.get_model(
                             model_param,
                             spec_res=spec_res,
                             wavel_resample=wavel_resample,
@@ -2864,20 +2889,23 @@ class Database:
                         )
 
             elif model_type == "calibration":
-                specbox = readcalib.get_spectrum(model_param)
+                spec_box = readcalib.get_spectrum(model_param)
 
-            boxes.append(specbox)
+            else:
+                spec_box = None
+
+            boxes.append(spec_box)
 
             if binary:
-                boxes_0.append(specbox_0)
-                boxes_1.append(specbox_1)
+                boxes_0.append(spec_box_0)
+                boxes_1.append(spec_box_1)
 
         if binary:
             return boxes, boxes_0, boxes_1
         else:
             return boxes
 
-    @typechecked
+    @beartype
     def get_mcmc_photometry(
         self,
         tag: str,
@@ -2897,6 +2925,9 @@ class Database:
         filter_name : str
             Filter name for which the synthetic photometry
             will be computed.
+        random : int, None
+            Number of random samples. All samples are selected
+            by setting the argument to ``None``.
         phot_type : str
             Photometry type ('magnitude' or 'flux').
         flux_units : tuple(str, str), None
@@ -2910,6 +2941,8 @@ class Database:
         np.ndarray
             Synthetic magnitudes or fluxes.
         """
+
+        from species.read.read_filter import ReadFilter
 
         if phot_type not in ["magnitude", "flux"]:
             raise ValueError(
@@ -3075,7 +3108,6 @@ class Database:
                     mcmc_phot[i], _ = readcalib.get_flux(model_param=model_param)
 
         if phot_type == "flux":
-            from species.read.read_filter import ReadFilter
             from species.util.data_util import convert_units
 
             read_filt = ReadFilter(filter_name)
@@ -3090,7 +3122,7 @@ class Database:
 
         return mcmc_phot
 
-    @typechecked
+    @beartype
     def get_object(
         self,
         object_name: str,
@@ -3128,6 +3160,8 @@ class Database:
             Box with the object's data.
         """
 
+        from species.read.read_filter import ReadFilter
+
         if verbose:
             print_section(f"Get object")
 
@@ -3159,8 +3193,7 @@ class Database:
                 magnitude = {}
                 flux = {}
                 mean_wavel = {}
-
-                from species.read.read_filter import ReadFilter
+                filter_width = {}
 
                 for observatory in dset.keys():
                     if observatory not in ["parallax", "distance", "spectrum"]:
@@ -3178,6 +3211,7 @@ class Database:
                 flux = None
                 phot_filters = None
                 mean_wavel = None
+                filter_width = None
 
             if inc_spec and f"objects/{object_name}/spectrum" in hdf5_file:
                 spectrum = {}
@@ -3209,12 +3243,14 @@ class Database:
             for filter_name in magnitude.keys():
                 read_filt = ReadFilter(filter_name)
                 mean_wavel[filter_name] = read_filt.mean_wavelength()
+                filter_width[filter_name] = read_filt.filter_fwhm()
 
         return create_box(
             "object",
             name=object_name,
             filters=phot_filters,
             mean_wavel=mean_wavel,
+            filter_width=filter_width,
             magnitude=magnitude,
             flux=flux,
             spectrum=spectrum,
@@ -3222,7 +3258,7 @@ class Database:
             distance=distance,
         )
 
-    @typechecked
+    @beartype
     def get_samples(
         self,
         tag: str,
@@ -3401,7 +3437,7 @@ class Database:
             normal_priors=normal_priors,
         )
 
-    @typechecked
+    @beartype
     def get_evidence(self, tag: str) -> Tuple[float, float]:
         """
         Function for returning the log-evidence (i.e.
@@ -3433,7 +3469,7 @@ class Database:
 
         return ln_evidence[0], ln_evidence[1]
 
-    @typechecked
+    @beartype
     def get_pt_profiles(
         self, tag: str, random: Optional[int] = None, out_file: Optional[str] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -3595,7 +3631,7 @@ class Database:
 
         return press, temp
 
-    @typechecked
+    @beartype
     def add_empirical(
         self,
         tag: str,
@@ -3674,15 +3710,21 @@ class Database:
             dset[...] = sptypes
 
             hdf5_file.create_dataset(
-                f"results/empirical/{tag}/goodness_of_fit", data=goodness_of_fit
+                f"results/empirical/{tag}/goodness_of_fit",
+                data=goodness_of_fit,
+                dtype="f8",
             )
             hdf5_file.create_dataset(
-                f"results/empirical/{tag}/flux_scaling", data=flux_scaling
+                f"results/empirical/{tag}/flux_scaling", data=flux_scaling, dtype="f8"
             )
-            hdf5_file.create_dataset(f"results/empirical/{tag}/av_ext", data=av_ext)
-            hdf5_file.create_dataset(f"results/empirical/{tag}/rad_vel", data=rad_vel)
+            hdf5_file.create_dataset(
+                f"results/empirical/{tag}/av_ext", data=av_ext, dtype="f8"
+            )
+            hdf5_file.create_dataset(
+                f"results/empirical/{tag}/rad_vel", data=rad_vel, dtype="f8"
+            )
 
-    @typechecked
+    @beartype
     def add_comparison(
         self,
         tag: str,
@@ -3758,7 +3800,9 @@ class Database:
                 del hdf5_file[f"results/comparison/{tag}"]
 
             dset = hdf5_file.create_dataset(
-                f"results/comparison/{tag}/goodness_of_fit", data=goodness_of_fit
+                f"results/comparison/{tag}/goodness_of_fit",
+                data=goodness_of_fit,
+                dtype="f8",
             )
 
             dset.attrs["object_name"] = str(object_name)
@@ -3782,17 +3826,19 @@ class Database:
                 dset.attrs[f"inc_phot{i}"] = item
 
             hdf5_file.create_dataset(
-                f"results/comparison/{tag}/flux_scaling", data=flux_scaling
+                f"results/comparison/{tag}/flux_scaling", data=flux_scaling, dtype="f8"
             )
 
             if len(scale_spec) > 0:
                 hdf5_file.create_dataset(
-                    f"results/comparison/{tag}/extra_scaling", data=extra_scaling
+                    f"results/comparison/{tag}/extra_scaling",
+                    data=extra_scaling,
+                    dtype="f8",
                 )
 
             for i, item in enumerate(coord_points):
                 hdf5_file.create_dataset(
-                    f"results/comparison/{tag}/coord_points{i}", data=item
+                    f"results/comparison/{tag}/coord_points{i}", data=item, dtype="f8"
                 )
 
             # Indices of the best-fit model
@@ -3915,7 +3961,9 @@ class Database:
                 del hdf5_file[f"results/fit/{tag}"]
 
             # Store the log-likelihood
-            hdf5_file.create_dataset(f"results/fit/{tag}/ln_prob", data=samples[:, -1])
+            hdf5_file.create_dataset(
+                f"results/fit/{tag}/ln_prob", data=samples[:, -1], dtype="f8"
+            )
 
             # Remove the column with the log-likelihood value
             samples = samples[:, :-1]
@@ -3926,7 +3974,9 @@ class Database:
                     "of the samples array."
                 )
 
-            dset = hdf5_file.create_dataset(f"results/fit/{tag}/samples", data=samples)
+            dset = hdf5_file.create_dataset(
+                f"results/fit/{tag}/samples", data=samples, dtype="f8"
+            )
 
             dset.attrs["model_type"] = "retrieval"
             dset.attrs["model_name"] = "petitradtrans"
@@ -4012,7 +4062,7 @@ class Database:
 
             for key, value in fixed_param.items():
                 group_path = f"results/fit/{tag}/fixed_param/{key}"
-                hdf5_file.create_dataset(group_path, data=value)
+                hdf5_file.create_dataset(group_path, data=value, dtype="f8")
 
         print(" [DONE]")
 
@@ -4146,7 +4196,7 @@ class Database:
                     samples = np.append(samples, cloud_mass[..., np.newaxis], axis=1)
 
                     del hdf5_file[db_tag]
-                    dset = hdf5_file.create_dataset(db_tag, data=samples)
+                    dset = hdf5_file.create_dataset(db_tag, data=samples, dtype="f8")
 
                     for attr_item in dset_attrs:
                         dset.attrs[attr_item] = dset_attrs[attr_item]
@@ -4231,7 +4281,7 @@ class Database:
                 )
 
                 del hdf5_file[db_tag]
-                dset = hdf5_file.create_dataset(db_tag, data=samples)
+                dset = hdf5_file.create_dataset(db_tag, data=samples, dtype="f8")
 
                 for item in dset_attrs:
                     dset.attrs[item] = dset_attrs[item]
@@ -4276,7 +4326,7 @@ class Database:
                 samples = np.append(samples, teff[..., np.newaxis], axis=1)
 
                 del hdf5_file[db_tag]
-                dset = hdf5_file.create_dataset(db_tag, data=samples)
+                dset = hdf5_file.create_dataset(db_tag, data=samples, dtype="f8")
 
                 for item in dset_attrs:
                     dset.attrs[item] = dset_attrs[item]
@@ -4287,7 +4337,7 @@ class Database:
                 dset.attrs[f"parameter{n_param-1}"] = "teff"
 
     @staticmethod
-    @typechecked
+    @beartype
     def get_retrieval_spectra(
         tag: str,
         random: Optional[int],
@@ -4349,7 +4399,10 @@ class Database:
 
         # Open configuration file
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = ConfigParser()
         config.read(config_file)
@@ -4602,9 +4655,12 @@ class Database:
 
         return boxes, read_rad
 
-    @typechecked
+    @beartype
     def get_retrieval_teff(
-        self, tag: str, wavel_range: Tuple[float, float], random: int = 100,
+        self,
+        tag: str,
+        wavel_range: Tuple[Real, Real],
+        random: int = 100,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Function for calculating :math:`T_\\mathrm{eff}`
@@ -4637,8 +4693,11 @@ class Database:
         print(f"Calculating Teff from {random} posterior samples... ")
 
         boxes, _ = self.get_retrieval_spectra(
-            tag=tag, random=random, wavel_range=wavel_range,
-            spec_res=None, lbl_opacity_sampling=10000,
+            tag=tag,
+            random=random,
+            wavel_range=wavel_range,
+            spec_res=None,
+            lbl_opacity_sampling=10000,
         )
 
         t_eff = np.zeros(len(boxes))
@@ -4714,7 +4773,7 @@ class Database:
 
         return t_eff, l_bol
 
-    @typechecked
+    @beartype
     def petitcode_param(
         self, tag: str, sample_type: str = "median", json_file: Optional[str] = None
     ) -> Dict[str, float]:
@@ -4976,3 +5035,101 @@ class Database:
         print(" [DONE]")
 
         return pcode_param
+
+    @beartype
+    def get_spectral_type(self, tag: str, verbose: bool = True) -> SpectrumBox:
+        """
+        Function for extracting the spectral template for which the
+        goodness-of-fit statistic has been minimized when using
+        :func:`~species.fit.compare_spectra.CompareSpectra.spectral_type`
+        for comparing data with the empirical templates in a spectral library.
+
+        Parameters
+        ----------
+        tag : str
+            Database tag where the results from the empirical comparison with
+            :class:`~species.fit.compare_spectra.CompareSpectra.spectral_type`
+            are stored.
+        verbose : bool
+            Print output, including the parameter values.
+
+        Returns
+        -------
+        SpectrumBox
+            A ``SpectrumBox`` that contains the spectrum and
+            attributes of the best-fit template.
+        """
+
+        if verbose:
+            print_section("Get best spectral type")
+            print(f"Database tag: {tag}")
+
+        with h5py.File(self.database, "r") as hdf5_file:
+            dset = hdf5_file[f"results/empirical/{tag}/names"]
+
+            object_name = dset.attrs["object_name"]
+            spec_library = dset.attrs["spec_library"]
+            n_spec_name = dset.attrs["n_spec_name"]
+
+            if verbose:
+                print(f"Object name: {object_name}")
+                print(f"Spectral library: {spec_library}")
+
+            if verbose:
+                print("\nIncluded spectra:")
+
+            spec_name = []
+            for i in range(n_spec_name):
+                spec_name.append(dset.attrs[f"spec_name{i}"])
+                if verbose:
+                    print(f"   - {spec_name[-1]}")
+
+            names = np.array(dset)
+            flux_scaling = np.array(hdf5_file[f"results/empirical/{tag}/flux_scaling"])
+            av_ext = np.array(hdf5_file[f"results/empirical/{tag}/av_ext"])
+            rad_vel = 1e3 * np.array(
+                hdf5_file[f"results/empirical/{tag}/rad_vel"]
+            )  # (m s-1)
+            goodness_fit = np.array(
+                [hdf5_file[f"results/empirical/{tag}/goodness_of_fit"]]
+            )
+
+        if isinstance(names[i], str):
+            best_name = names[i]
+        else:
+            best_name = names[i].decode("utf-8")
+
+        with h5py.File(self.database, "r") as hdf5_file:
+            dset = hdf5_file[f"spectra/{spec_library}/{best_name}"]
+            spectrum = np.array(dset)
+
+            sptype = dset.attrs["sptype"]
+            simbad = dset.attrs["simbad"]
+            parallax = dset.attrs["parallax"]
+            spec_res = dset.attrs["spec_res"]
+
+        if verbose:
+            print("\nBest-fit spectral template:")
+            print(f"   - G_k = {goodness_fit[0][0]:.2f}")
+            print(f"   - Object name = {best_name}")
+            print(f"   - SIMBAD name = {simbad}")
+            print(f"   - Spectral type = {sptype}")
+            print(f"   - Flux scaling = {flux_scaling[0][0]:.2e}")
+
+            if np.amin(av_ext) > 0.0:
+                print(f"   - Extinction A_V = {av_ext[0]}")
+            if np.amin(rad_vel) > 0.0:
+                print(f"   - Radial velocity (km/s) = {rad_vel[0]}")
+
+        return create_box(
+            "spectrum",
+            spectrum=spec_library,
+            wavelength=spectrum[:, 0],
+            flux=spectrum[:, 1],
+            error=spectrum[:, 2],
+            name=best_name,
+            sptype=sptype,
+            simbad=best_name,
+            parallax=parallax,
+            spec_res=spec_res,
+        )

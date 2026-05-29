@@ -5,14 +5,15 @@ Module with reading functionalities for calibration spectra.
 import configparser
 import os
 
-from typing import Dict, Optional, Tuple
+from numbers import Real
 
 import h5py
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import Dict, Optional, Tuple
 from scipy.optimize import curve_fit
 from spectres.spectral_resampling_numba import spectres_numba
-from typeguard import typechecked
 
 from species.core.box import SpectrumBox, create_box
 from species.phot.syn_phot import SyntheticPhotometry
@@ -25,7 +26,7 @@ class ReadCalibration:
     Class for reading a calibration spectrum from the database.
     """
 
-    @typechecked
+    @beartype
     def __init__(self, tag: str, filter_name: Optional[str] = None) -> None:
         """
         Parameters
@@ -52,19 +53,22 @@ class ReadCalibration:
             transmission = ReadFilter(filter_name)
             self.wavel_range = transmission.wavelength_range()
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = configparser.ConfigParser()
         config.read(config_file)
 
         self.database = config["species"]["database"]
 
-    @typechecked
+    @beartype
     def resample_spectrum(
         self,
         wavel_points: np.ndarray,
-        model_param: Optional[Dict[str, float]] = None,
-        spec_res: Optional[float] = None,
+        model_param: Optional[Dict[str, Real]] = None,
+        spec_res: Optional[Real] = None,
         apply_mask: bool = False,
         interp_highres: bool = False,
     ) -> SpectrumBox:
@@ -167,14 +171,14 @@ class ReadCalibration:
             name=self.tag,
         )
 
-    @typechecked
+    @beartype
     def get_spectrum(
         self,
-        model_param: Optional[Dict[str, float]] = None,
+        model_param: Optional[Dict[str, Real]] = None,
         apply_mask: bool = False,
-        wavel_sampling: Optional[float] = None,
+        wavel_sampling: Optional[Real] = None,
         extrapolate: bool = False,
-        min_wavelength: Optional[float] = None,
+        min_wavelength: Optional[Real] = None,
     ) -> SpectrumBox:
         """
         Function for selecting the calibration spectrum.
@@ -305,10 +309,10 @@ class ReadCalibration:
             name=self.tag,
         )
 
-    @typechecked
+    @beartype
     def get_flux(
-        self, model_param: Optional[Dict[str, float]] = None
-    ) -> Tuple[float, float]:
+        self, model_param: Optional[Dict[str, Real]] = None
+    ) -> Tuple[Real, Real]:
         """
         Function for calculating the average flux for the
         ``filter_name``.
@@ -337,12 +341,12 @@ class ReadCalibration:
             specbox.wavelength, specbox.flux, error=specbox.flux
         )
 
-    @typechecked
+    @beartype
     def get_magnitude(
         self,
-        model_param: Optional[Dict[str, float]] = None,
-        distance: Optional[Tuple[float, float]] = None,
-    ) -> Tuple[Tuple[float, Optional[float]], Tuple[Optional[float], Optional[float]]]:
+        model_param: Optional[Dict[str, Real]] = None,
+        distance: Optional[Tuple[Real, Real]] = None,
+    ) -> Tuple[Tuple[Real, Optional[Real]], Tuple[Optional[Real], Optional[Real]]]:
         """
         Function for calculating the apparent magnitude for the
         ``filter_name``.

@@ -5,13 +5,14 @@ that includes photometric and/or spectral data and/or models.
 
 import math
 
-from typing import Dict, List, Optional, Tuple, Union
+from numbers import Real
 
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 from matplotlib.ticker import AutoMinorLocator
 
 from species.core.box import (
@@ -28,37 +29,37 @@ from species.util.data_util import convert_units
 from species.util.plot_util import create_model_label, create_param_format
 
 
-@typechecked
+@beartype
 def plot_spectrum(
     boxes: list,
     filters: Optional[List[str]] = None,
     residuals: Optional[ResidualsBox] = None,
     plot_kwargs: Optional[List[Optional[dict]]] = None,
     envelope: bool = False,
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    ylim_res: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    ylim_res: Optional[Tuple[Real, Real]] = None,
     scale: Optional[Tuple[str, str]] = None,
     title: Optional[str] = None,
-    offset: Optional[Tuple[float, float]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
     legend: Optional[
         Union[
             str,
             dict,
-            Tuple[float, float],
-            List[Optional[Union[dict, str, Tuple[float, float]]]],
+            Tuple[Real, Real],
+            List[Optional[Union[dict, str, Tuple[Real, Real]]]],
         ]
     ] = None,
-    figsize: Optional[Tuple[float, float]] = (6.0, 3.0),
+    figsize: Optional[Tuple[Real, Real]] = (6.0, 3.0),
     object_type: str = "planet",
     quantity: str = "flux density",
     output: Optional[str] = None,
     leg_param: Optional[List[str]] = None,
     param_fmt: Optional[Dict[str, str]] = None,
-    grid_hspace: float = 0.1,
+    grid_hspace: Real = 0.1,
     inc_model_name: bool = False,
     units: Tuple[str, str] = ("um", "W m-2 um-1"),
-    font_size: Optional[Dict[str, float]] = None,
+    font_size: Optional[Dict[str, Real]] = None,
 ) -> mpl.figure.Figure:
     """
     Function for plotting a spectral energy distribution and combining
@@ -142,7 +143,7 @@ def plot_spectrum(
         Object type ('planet' or 'star'). With 'planet', the radius
         and mass are expressed in Jupiter units. With 'star', the
         radius and mass are expressed in solar units.
-    quantity: str
+    quantity : str
         The quantity of the y-axis ('flux density', 'flux',
         or 'magnitude').
     output : str, None
@@ -231,18 +232,18 @@ def plot_spectrum(
         grid_sp = mpl.gridspec.GridSpec(3, 1, height_ratios=[1, 3, 1])
         grid_sp.update(wspace=0, hspace=grid_hspace, left=0, right=1, bottom=0, top=1)
 
-        ax1 = plt.subplot(grid_sp[1, 0])
-        ax2 = plt.subplot(grid_sp[0, 0])
         ax3 = plt.subplot(grid_sp[2, 0])
+        ax1 = plt.subplot(grid_sp[1, 0], sharex=ax3)
+        ax2 = plt.subplot(grid_sp[0, 0], sharex=ax3)
 
     elif residuals is not None:
         fig = plt.figure(figsize=figsize)
         grid_sp = mpl.gridspec.GridSpec(2, 1, height_ratios=[4, 1])
         grid_sp.update(wspace=0, hspace=grid_hspace, left=0, right=1, bottom=0, top=1)
 
-        ax1 = plt.subplot(grid_sp[0, 0])
-        ax2 = None
         ax3 = plt.subplot(grid_sp[1, 0])
+        ax1 = plt.subplot(grid_sp[0, 0], sharex=ax3)
+        ax2 = None
 
     elif filters is not None:
         fig = plt.figure(figsize=figsize)
@@ -250,7 +251,7 @@ def plot_spectrum(
         grid_sp.update(wspace=0, hspace=grid_hspace, left=0, right=1, bottom=0, top=1)
 
         ax1 = plt.subplot(grid_sp[1, 0])
-        ax2 = plt.subplot(grid_sp[0, 0])
+        ax2 = plt.subplot(grid_sp[0, 0], sharex=ax1)
         ax3 = None
 
     else:
@@ -566,15 +567,26 @@ def plot_spectrum(
             wavelength = box_item.wavelength
             flux = box_item.flux
 
-            if isinstance(wavelength[0], (np.float32, np.float64)):
+            if hasattr(box_item, "units"):
+                if box_item.units[0] != "um" or box_item.units[1] != "W m-2 um-1":
+                    raise ValueError(
+                        f"The units of the ModelBox {box_item} are "
+                        f"{box_item.units} while um and W m-2 um-1 "
+                        "are required. Please make sure to provide "
+                        "a ModelBox of which the units have not been "
+                        "adjusted. Instead, use the 'units' "
+                        "parameter of the 'plot_spectrum' function."
+                    )
+
+            if isinstance(wavelength[0], Real):
                 data_in = np.column_stack([wavelength, flux])
                 data_out = convert_units(data_in, units, convert_from=False)
 
-                wavelength = data_out[:, 0]
-                flux = data_out[:, 1]
+                data_wavel = data_out[:, 0]
+                data_flux = data_out[:, 1]
 
-                data = np.array(flux, dtype=np.float64)
-                flux_masked = np.ma.array(data, mask=np.isnan(data))
+                data_flux = np.array(data_flux, dtype=np.float64)
+                flux_masked = np.ma.array(data_flux, mask=np.isnan(data_flux))
 
                 if isinstance(box_item, ModelBox):
                     param = box_item.parameters.copy()
@@ -603,13 +615,13 @@ def plot_spectrum(
                         del kwargs_copy["label"]
 
                     if quantity == "flux":
-                        flux_scaling = wavelength
+                        flux_scaling = data_wavel
 
                     if "zorder" not in kwargs_copy:
                         kwargs_copy["zorder"] = 2.0
 
                     ax1.plot(
-                        wavelength,
+                        data_wavel,
                         flux_scaling * flux_masked / scaling,
                         label=label,
                         **kwargs_copy,
@@ -617,10 +629,10 @@ def plot_spectrum(
 
                 else:
                     if quantity == "flux":
-                        flux_scaling = wavelength
+                        flux_scaling = data_wavel
 
                     ax1.plot(
-                        wavelength,
+                        data_wavel,
                         flux_scaling * flux_masked / scaling,
                         lw=0.5,
                         label=label,
@@ -632,11 +644,11 @@ def plot_spectrum(
                     data_in = np.column_stack([wavelength[i], flux[i]])
                     data_out = convert_units(data_in, units, convert_from=False)
 
-                    wavelength = data_out[:, 0]
-                    flux = data_out[:, 1]
+                    data_wavel = data_out[:, 0]
+                    data_flux = data_out[:, 1]
 
-                    data = np.array(flux, dtype=np.float64)
-                    flux_masked = np.ma.array(data, mask=np.isnan(data))
+                    data_flux = np.array(data_flux, dtype=np.float64)
+                    flux_masked = np.ma.array(data_flux, mask=np.isnan(data_flux))
 
                     if isinstance(box_item.name[i], bytes):
                         label = box_item.name[i].decode("utf-8")
@@ -647,7 +659,7 @@ def plot_spectrum(
                         flux_scaling = wavelength
 
                     ax1.plot(
-                        wavelength,
+                        data_wavel,
                         flux_scaling * flux_masked / scaling,
                         lw=0.5,
                         label=label,
@@ -1179,7 +1191,7 @@ def plot_spectrum(
                     kwargs_copy = plot_kwargs[j][filter_item].copy()
 
                     if "zorder" not in kwargs_copy:
-                        kwargs_copy["zorder"] = 4.0
+                        kwargs_copy["zorder"] = 2.8
 
                     ax1.errorbar(
                         wavelength,
@@ -1217,8 +1229,11 @@ def plot_spectrum(
                         if "label" in kwargs_copy:
                             del kwargs_copy["label"]
 
-                        if "zorder" not in kwargs_copy:
-                            kwargs_copy["zorder"] = 4.0
+                        if "zorder" in kwargs_copy:
+                            zorder_synphot = kwargs_copy["zorder"] - 0.2
+                            del kwargs_copy["zorder"]
+                        else:
+                            zorder_synphot = 2.8
 
                         ax1.errorbar(
                             wavelength,
@@ -1226,6 +1241,7 @@ def plot_spectrum(
                             xerr=fwhm / 2.0,
                             yerr=None,
                             mfc="white",
+                            zorder=zorder_synphot,
                             **kwargs_copy,
                         )
 
@@ -1238,8 +1254,11 @@ def plot_spectrum(
                         if "mfc" in kwargs_copy:
                             del kwargs_copy["mfc"]
 
-                        if "zorder" not in kwargs_copy:
-                            kwargs_copy["zorder"] = 4.0
+                        if "zorder" in kwargs_copy:
+                            zorder_synphot = kwargs_copy["zorder"] - 0.2
+                            del kwargs_copy["zorder"]
+                        else:
+                            zorder_synphot = 2.8
 
                         ax1.errorbar(
                             wavelength,
@@ -1247,6 +1266,7 @@ def plot_spectrum(
                             xerr=fwhm / 2.0,
                             yerr=None,
                             mfc="white",
+                            zorder=zorder_synphot,
                             **kwargs_copy,
                         )
 
@@ -1334,9 +1354,7 @@ def plot_spectrum(
                 finite = np.isfinite(residuals.photometry[item][1])
 
                 max_tmp = np.max(np.abs(residuals.photometry[item][1][finite]))
-
-                if max_tmp > res_max:
-                    res_max = max_tmp
+                res_max = max(res_max, max_tmp)
 
         if residuals.spectrum is not None:
             for spec_key, spec_val in residuals.spectrum.items():
@@ -1364,9 +1382,7 @@ def plot_spectrum(
                     )
 
                 max_tmp = np.nanmax(np.abs(spec_val[:, 1]))
-
-                if max_tmp > res_max:
-                    res_max = max_tmp
+                res_max = max(res_max, max_tmp)
 
         res_lim = math.ceil(1.1 * res_max)
 
@@ -1482,23 +1498,13 @@ def plot_spectrum(
     if units[0] in ["Hz", "GHz"] and xlim is None:
         ax1.invert_xaxis()
 
-        if filters is not None:
-            ax2.invert_xaxis()
-
-        if residuals is not None:
-            ax3.invert_xaxis()
-
     if xlim is None:
         xlim = ax1.get_xlim()
     else:
         ax1.set_xlim(xlim[0], xlim[1])
 
     if filters is not None:
-        ax2.set_xlim(xlim[0], xlim[1])
         ax2.set_ylim(0.0, 1.0)
-
-    if residuals is not None:
-        ax3.set_xlim(xlim[0], xlim[1])
 
     # if scale[1] == "log":
     #     ax1.yaxis.set_major_locator()

@@ -8,16 +8,18 @@ import os
 import pathlib
 import warnings
 
-from typing import Dict, List, Optional, Tuple, Union
+from decimal import Decimal
+from numbers import Real
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 from matplotlib.colorbar import Colorbar
 from matplotlib.ticker import MultipleLocator
 from scipy.interpolate import interp1d
-from typeguard import typechecked
 
 from species.core.box import IsochroneBox, ColorMagBox, ColorColorBox
 from species.read.read_filter import ReadFilter
@@ -32,7 +34,7 @@ from species.util.plot_util import (
 )
 
 
-@typechecked
+@beartype
 def plot_color_magnitude(
     boxes: list,
     objects: Optional[
@@ -41,24 +43,24 @@ def plot_color_magnitude(
             List[Tuple[str, str, str, str, Optional[dict], Optional[dict]]],
         ]
     ] = None,
-    mass_labels: Optional[Dict[str, List[Tuple[float, str]]]] = None,
-    teff_labels: Optional[Dict[str, List[Tuple[float, str]]]] = None,
+    mass_labels: Optional[Dict[str, List[Tuple[Real, str]]]] = None,
+    teff_labels: Optional[Dict[str, List[Tuple[Real, str]]]] = None,
     companion_labels: bool = False,
     accretion: bool = False,
     reddening: Optional[
-        List[Tuple[Tuple[str, str], Tuple[str, float], str, float, Tuple[float, float]]]
+        List[Tuple[Tuple[str, str], Tuple[str, Real], str, Real, Tuple[Real, Real]]]
     ] = None,
     ism_red: Optional[
-        List[Tuple[Tuple[str, str], str, float, Tuple[float, float]]]
+        List[Tuple[Tuple[str, str], str, Real, Tuple[Real, Real]]]
     ] = None,
     field_range: Optional[Tuple[str, str]] = None,
     label_x: str = "Color",
     label_y: str = "Absolute magnitude",
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    legend: Optional[Union[str, dict, Tuple[float, float]]] = "upper left",
-    figsize: Optional[Tuple[float, float]] = (4.0, 4.8),
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
+    legend: Optional[Union[str, dict, Tuple[Real, Real]]] = "upper left",
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 4.8),
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """
@@ -365,6 +367,9 @@ def plot_color_magnitude(
                 if item.library == "sonora-bobcat":
                     metal = float(item.iso_tag[-4:])
                     label += f", [M/H] = {metal}"
+
+                if hasattr(item, "age"):
+                    label += f" ({Decimal(item.age).normalize()} Myr)"
 
                 if item.library == "zhu2015":
                     ax1.plot(
@@ -901,7 +906,7 @@ def plot_color_magnitude(
     return fig
 
 
-@typechecked
+@beartype
 def plot_color_color(
     boxes: list,
     objects: Optional[
@@ -918,29 +923,29 @@ def plot_color_color(
             ],
         ]
     ] = None,
-    mass_labels: Optional[Dict[str, List[Tuple[float, str]]]] = None,
-    teff_labels: Optional[Dict[str, List[Tuple[float, str]]]] = None,
+    mass_labels: Optional[Dict[str, List[Tuple[Real, str]]]] = None,
+    teff_labels: Optional[Dict[str, List[Tuple[Real, str]]]] = None,
     companion_labels: bool = False,
     reddening: Optional[
         List[
             Tuple[
                 Tuple[str, str],
                 Tuple[str, str],
-                Tuple[str, float],
+                Tuple[str, Real],
                 str,
-                float,
-                Tuple[float, float],
+                Real,
+                Tuple[Real, Real],
             ]
         ]
     ] = None,
     field_range: Optional[Tuple[str, str]] = None,
     label_x: str = "Color",
     label_y: str = "Color",
-    xlim: Optional[Tuple[float, float]] = None,
-    ylim: Optional[Tuple[float, float]] = None,
-    offset: Optional[Tuple[float, float]] = None,
-    legend: Optional[Union[str, dict, Tuple[float, float]]] = "upper left",
-    figsize: Optional[Tuple[float, float]] = (4.0, 4.3),
+    xlim: Optional[Tuple[Real, Real]] = None,
+    ylim: Optional[Tuple[Real, Real]] = None,
+    offset: Optional[Tuple[Real, Real]] = None,
+    legend: Optional[Union[str, dict, Tuple[Real, Real]]] = "upper left",
+    figsize: Optional[Tuple[Real, Real]] = (4.0, 4.3),
     output: Optional[str] = None,
 ) -> mpl.figure.Figure:
     """

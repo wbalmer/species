@@ -2,12 +2,19 @@
 Module with the  ``Box`` classes and ``create_box`` function.
 """
 
-from typing import List, Union
+import warnings
+
+from numbers import Real
 
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import List, Tuple, Union
+from scipy.signal import savgol_filter
+
 from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_filter import ReadFilter
+from species.util.data_util import convert_units
 from species.util.spec_util import smooth_spectrum
 
 
@@ -65,6 +72,7 @@ class ColorMagBox(Box):
         self.sptype = None
         self.mass = None
         self.radius = None
+        self.age = None
 
 
 class ColorColorBox(Box):
@@ -91,6 +99,7 @@ class ColorColorBox(Box):
         self.sptype = None
         self.mass = None
         self.radius = None
+        self.age = None
 
 
 class CoolingBox(Box):
@@ -110,6 +119,7 @@ class CoolingBox(Box):
         self.model = None
         self.mass = None
         self.age = None
+        self.s_init = None
         self.teff = None
         self.log_lum = None
         self.logg = None
@@ -136,6 +146,7 @@ class IsochroneBox(Box):
 
         self.model = None
         self.age = None
+        self.s_init = None
         self.mass = None
         self.teff = None
         self.log_lum = None
@@ -194,8 +205,9 @@ class ModelBox(Box):
         self.bol_flux = None
         self.spec_res = None
         self.extra_out = None
+        self.units = ("um", "W m-2 um-1")
 
-    def smooth_spectrum(self, spec_res: float) -> None:
+    def smooth_spectrum(self, spec_res: Real) -> None:
         """
         Method for smoothing the spectrum with a Gaussian kernel to the
         instrument resolution. The method is best applied on an input
@@ -302,6 +314,76 @@ class ModelBox(Box):
 
         return phot_box
 
+    def highpass_filter(self, window_length: int = 101) -> None:
+        """
+        Method for high-pass filtering of the model spectrum that
+        is stored in the ``ModelBox``. This is useful for removing
+        the pseudo-continuum of a high-resolution spectrum.
+        A `Savitzky-Golay filter <https://docs.scipy.org/doc/scipy/
+        reference/generated/scipy.signal.savgol_filter.html>`_
+        is used with a second order polynomial.
+
+        Parameters
+        ----------
+        window_length : int
+            Window length of the Savitsky-Golay filter. The
+            argument needs to be optimized, depending on the
+            sampling resolution of the model spectrum
+            (default: 101).
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        nan_mask = np.isnan(self.flux)
+
+        if np.sum(nan_mask) > 0:
+            warnings.warn(f"There are {np.sum(nan_mask)} NaNs in the model spectrum.")
+
+        filtered = self.flux.copy()
+
+        filtered[~nan_mask] = np.array(
+            savgol_filter(
+                self.flux[~nan_mask], window_length=window_length, polyorder=2
+            )
+        )
+
+        self.flux -= filtered[~nan_mask]
+
+    def convert_units(self, units: Tuple[str, str]) -> None:
+        """
+        Method for converting the wavelength and/or flux density
+        units from :math:`\\mu\\text{m}` and
+        :math:`\\text{W} \\text{m}^{-2} \\mu\\text{m}^{-1}`,
+        respectively, to any of the units listed with
+        the ``units`` parameter.
+
+        Parameters
+        ----------
+        units : tuple(str, str)
+            Tuple with the units of the wavelength ("um", "angstrom",
+            "nm", "mm", "cm", "m", "Hz", "GHz") and the units of the
+            flux density ("W m-2 um-1", "W m-2 m-1", "W m-2 Hz-1",
+            "erg s-1 cm-2 angstrom-1" "erg s-1 cm-2 Hz-1", "uJy",
+            mJy", "Jy", "MJy"). One can use "um" or "µm"
+            interchangeably, and similarly "AA", "Å", "A", or
+            "angstrom".
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        spec_in = np.column_stack([self.wavelength, self.flux])
+        spec_out = convert_units(spec_in, units, convert_from=False)
+
+        self.wavelength = spec_out[:, 0]
+        self.flux = spec_out[:, 1]
+        self.units = (units[0], units[1])
+
 
 class ObjectBox(Box):
     """
@@ -319,6 +401,7 @@ class ObjectBox(Box):
         self.name = None
         self.filters = None
         self.mean_wavel = None
+        self.filter_width = None
         self.magnitude = None
         self.flux = None
         self.spectrum = None
@@ -446,6 +529,8 @@ def create_box(boxtype, **kwargs):
             box.radius = kwargs["radius"]
         if "iso_tag" in kwargs:
             box.iso_tag = kwargs["iso_tag"]
+        if "age" in kwargs:
+            box.age = kwargs["age"]
 
     if boxtype == "colorcolor":
         box = ColorColorBox()
@@ -464,11 +549,16 @@ def create_box(boxtype, **kwargs):
             box.radius = kwargs["radius"]
         if "iso_tag" in kwargs:
             box.iso_tag = kwargs["iso_tag"]
+        if "age" in kwargs:
+            box.age = kwargs["age"]
 
     elif boxtype == "cooling":
         box = CoolingBox()
         box.model = kwargs["model"]
         box.mass = kwargs["mass"]
+        if "s_init" in kwargs:
+            box.s_init = kwargs["s_init"]
+
         if "age" in kwargs:
             box.age = kwargs["age"]
         else:
@@ -486,6 +576,8 @@ def create_box(boxtype, **kwargs):
         box = IsochroneBox()
         box.model = kwargs["model"]
         box.age = kwargs["age"]
+        if "s_init" in kwargs:
+            box.s_init = kwargs["s_init"]
         if "mass" in kwargs:
             box.mass = kwargs["mass"]
         else:
@@ -520,6 +612,7 @@ def create_box(boxtype, **kwargs):
         box.name = kwargs["name"]
         box.filters = kwargs["filters"]
         box.mean_wavel = kwargs["mean_wavel"]
+        box.filter_width = kwargs["filter_width"]
         box.magnitude = kwargs["magnitude"]
         box.flux = kwargs["flux"]
         box.spectrum = kwargs["spectrum"]
@@ -587,6 +680,8 @@ def create_box(boxtype, **kwargs):
             box.simbad = kwargs["simbad"]
         if "sptype" in kwargs:
             box.sptype = kwargs["sptype"]
+        if "parallax" in kwargs:
+            box.parallax = kwargs["parallax"]
         if "distance" in kwargs:
             box.distance = kwargs["distance"]
         if "spec_res" in kwargs:

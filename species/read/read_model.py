@@ -2,20 +2,23 @@
 Module with reading functionalities for atmospheric model spectra.
 """
 
+import os
 import warnings
+
+from numbers import Real
 
 from configparser import ConfigParser
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import dust_extinction.parameter_averages as dust_ext
 import h5py
 import numpy as np
 
 from astropy import units as u
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 from scipy.integrate import simpson
-from scipy.interpolate import interp1d, RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator
 from spectres.spectral_resampling_numba import spectres_numba
 
 from species.core import constants
@@ -32,7 +35,12 @@ from species.phot.syn_phot import SyntheticPhotometry
 from species.read.read_filter import ReadFilter
 from species.read.read_planck import ReadPlanck
 from species.util.convert_util import logg_to_mass
-from species.util.dust_util import check_dust_database, ism_extinction, convert_to_av
+from species.util.dust_util import (
+    convert_to_av,
+    interp_lognorm,
+    interp_powerlaw,
+    ism_extinction,
+)
 from species.util.model_util import binary_to_single, check_nearest_spec, rot_int_cmj
 from species.util.spec_util import smooth_spectrum
 
@@ -55,11 +63,11 @@ class ReadModel:
     reddening, :math:`R_V`.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         model: str,
-        wavel_range: Optional[Tuple[float, float]] = None,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
         filter_name: Optional[str] = None,
     ):
         """
@@ -106,7 +114,10 @@ class ReadModel:
         else:
             self.mean_wavelength = None
 
-        config_file = Path.cwd() / "species_config.ini"
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = ConfigParser()
         config.read(config_file)
@@ -139,6 +150,8 @@ class ReadModel:
             "veil_b",
             "veil_ref",
             "vsini",
+            "limb_dark",
+            "rad_vel",
         ]
 
         for i in range(10):
@@ -149,7 +162,7 @@ class ReadModel:
         hdf5_file = self.open_database()
         hdf5_file.close()
 
-    @typechecked
+    @beartype
     def open_database(self) -> h5py._hl.files.File:
         """
         Internal function for opening the HDF5 database.
@@ -185,7 +198,7 @@ class ReadModel:
 
         return h5py.File(self.database, "r")
 
-    @typechecked
+    @beartype
     def wavelength_points(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Internal function for extracting the wavelength points and
@@ -229,10 +242,8 @@ class ReadModel:
 
         return wl_points[wl_index], wl_index
 
-    @typechecked
-    def interpolate_grid(
-        self, teff_range: Optional[Tuple[float, float]] = None
-    ) -> None:
+    @beartype
+    def interpolate_grid(self, teff_range: Optional[Tuple[Real, Real]] = None) -> None:
         """
         Internal function for linearly interpolating the grid of
         model spectra for a requested wavelength range.
@@ -308,30 +319,29 @@ class ReadModel:
             fill_value=np.nan,
         )
 
-    @typechecked
+    @beartype
     def apply_lognorm_ext(
         self,
         wavelength: np.ndarray,
         flux: np.ndarray,
-        radius_interp: float,
-        sigma_interp: float,
-        v_band_ext: float,
+        lognorm_radius: Real,
+        lognorm_sigma: Real,
+        lognorm_ext: Real,
     ) -> np.ndarray:
         """
-        Internal function for applying extinction by dust to a
-        spectrum.
+        Internal function for applying extinction by dust to a spectrum.
 
         wavelength : np.ndarray
             Wavelengths (um) of the spectrum.
         flux : np.ndarray
             Fluxes (W m-2 um-1) of the spectrum.
-        radius_interp : float
-            Logarithm of the mean geometric radius (um) of the
-            log-normal size distribution.
-        sigma_interp : float
+        lognorm_radius : float
+            Logarithm (base 10) of the mean geometric radius (um)
+            of the log-normal size distribution.
+        lognorm_sigma : float
             Geometric standard deviation (dimensionless) of the
             log-normal size distribution.
-        v_band_ext : float
+        lognorm_ext : float
             The extinction (mag) in the V band.
 
         Returns
@@ -340,111 +350,44 @@ class ReadModel:
             Fluxes (W m-2 um-1) with the extinction applied.
         """
 
-        check_dust_database()
+        # Interpolate cross sections as function of wavelength,
+        # geometric radius, and geometric standard deviation
 
-        with h5py.File(self.database, "r") as hdf5_file:
-            # Read array with cross sections
-            dust_cross = np.array(
-                hdf5_file["dust/lognorm/mgsio3/crystalline/cross_section"]
-            )
-
-            # Read array with wavelengths
-            dust_wavel = np.array(
-                hdf5_file["dust/lognorm/mgsio3/crystalline/wavelength"]
-            )
-
-            # Read array with geometric radius
-            dust_radius = np.array(
-                hdf5_file["dust/lognorm/mgsio3/crystalline/radius_g"]
-            )
-
-            # Read array with geometric standard deviation
-            dust_sigma = np.array(hdf5_file["dust/lognorm/mgsio3/crystalline/sigma_g"])
+        dust_interp, _, _ = interp_lognorm(verbose=False)
+        dust_wavel = dust_interp.grid[0]
 
         if wavelength[0] < dust_wavel[0]:
             raise ValueError(
-                f"The shortest wavelength ({wavelength[0]:.2e} um) for which the "
-                f"spectrum will be calculated is smaller than the shortest "
-                f"wavelength ({dust_wavel[0]:.2e} um) of the grid with dust cross "
-                f"sections."
+                f"The shortest wavelength ({wavelength[0]:.2e} um) "
+                "for which the spectrum will be calculated is smaller "
+                f"than the shortest wavelength ({dust_wavel[0]:.2e} "
+                "um) of the grid with dust cross sections."
             )
 
         if wavelength[-1] > dust_wavel[-1]:
             raise ValueError(
-                f"The longest wavelength ({wavelength[-1]:.2e} um) for which the "
-                f"spectrum  will be calculated is larger than the longest wavelength "
-                f"({dust_wavel[-1]:.2e} um) of the grid with dust cross sections."
+                f"The longest wavelength ({wavelength[-1]:.2e} um) "
+                "for which the spectrum  will be calculated is "
+                "larger than the longest wavelength "
+                f"({dust_wavel[-1]:.2e} um) of the grid with dust "
+                "cross sections."
             )
 
-        # Interpolate cross sections as function of wavelength,
-        # geometric radius, and geometric standard deviation
+        # For each radius-sigma pair, cross sections are normalized
+        # by the integrated cross section in the V-band
 
-        dust_interp = RegularGridInterpolator(
-            (dust_wavel, dust_radius, dust_sigma),
-            dust_cross,
-            method="linear",
-            bounds_error=True,
-        )
+        cross_sections = dust_interp((wavelength, 10.0**lognorm_radius, lognorm_sigma))
 
-        # Read Bessell V-band filter profile
+        return flux * np.exp(-lognorm_ext * cross_sections)
 
-        read_filter = ReadFilter("Generic/Bessell.V")
-        filt_trans = read_filter.get_filter()
-
-        # Create empty array for V-band extinction
-
-        cross_phot = np.zeros((dust_radius.shape[0], dust_sigma.shape[0]))
-
-        for i in range(dust_radius.shape[0]):
-            for j in range(dust_sigma.shape[0]):
-                # Calculate the filter-weighted average of the extinction cross sections
-
-                cross_interp = interp1d(
-                    dust_wavel, dust_cross[:, i, j], kind="linear", bounds_error=True
-                )
-
-                cross_tmp = cross_interp(filt_trans[:, 0])
-
-                integral1 = np.trapezoid(
-                    filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0]
-                )
-                integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
-
-                cross_phot[i, j] = integral1 / integral2
-
-        # Interpolate the grid with the V-band extinction as
-        # function of geometric radius and standard deviation
-
-        cross_interp = RegularGridInterpolator(
-            (dust_radius, dust_sigma), cross_phot, method="linear", bounds_error=True
-        )
-
-        cross_v_band = cross_interp((10.0**radius_interp, sigma_interp))
-
-        # Create arrays with fixed particle properties
-
-        radius_full = np.full(wavelength.shape[0], 10.0**radius_interp)
-        sigma_full = np.full(wavelength.shape[0], sigma_interp)
-
-        # Interpolate the cross-sections for the input wavelengths
-        # and the geometric radius and standard deviation
-
-        cross_new = dust_interp(np.column_stack((wavelength, radius_full, sigma_full)))
-
-        # Calculate number of grains for the requested V-band extinction
-
-        n_grains = v_band_ext / cross_v_band / 2.5 / np.log10(np.exp(1.0))
-
-        return flux * np.exp(-cross_new * n_grains)
-
-    @typechecked
+    @beartype
     def apply_powerlaw_ext(
         self,
         wavelength: np.ndarray,
         flux: np.ndarray,
-        r_max_interp: float,
-        exp_interp: float,
-        v_band_ext: float,
+        powerlaw_max: Real,
+        powerlaw_exp: Real,
+        powerlaw_ext: Real,
     ) -> np.ndarray:
         """
         Internal function for applying extinction by dust to a
@@ -454,11 +397,12 @@ class ReadModel:
             Wavelengths (um) of the spectrum.
         flux : np.ndarray
             Fluxes (W m-2 um-1) of the spectrum.
-        r_max_interp : float
-            Maximum radius (um) of the power-law size distribution.
-        exp_interp : float
+        powerlaw_max : float
+            Logarithm (base 10) of the maximum radius (um)
+            of the power-law size distribution.
+        powerlaw_exp : float
             Exponent of the power-law size distribution.
-        v_band_ext : float
+        powerlaw_ext : float
             The extinction (mag) in the V band.
 
         Returns
@@ -467,39 +411,11 @@ class ReadModel:
             Fluxes (W m-2 um-1) with the extinction applied.
         """
 
-        check_dust_database()
-
-        with h5py.File(self.database, "r") as hdf5_file:
-            # Read array with cross sections
-            dust_cross = np.array(
-                hdf5_file["dust/powerlaw/mgsio3/crystalline/cross_section"]
-            )
-
-            # Read array with wavelengths
-
-            dust_wavel = np.array(
-                hdf5_file["dust/powerlaw/mgsio3/crystalline/wavelength"]
-            )
-
-            # Read array with maximum particle radii
-
-            dust_r_max = np.array(
-                hdf5_file["dust/powerlaw/mgsio3/crystalline/radius_max"]
-            )
-
-            # Read array with power-law exponents
-
-            dust_exp = np.array(hdf5_file["dust/powerlaw/mgsio3/crystalline/exponent"])
-
         # Interpolate cross sections as function of wavelength,
         # geometric radius, and geometric standard deviation
 
-        dust_interp = RegularGridInterpolator(
-            (dust_wavel, dust_r_max, dust_exp),
-            dust_cross,
-            method="linear",
-            bounds_error=True,
-        )
+        dust_interp, _, _ = interp_powerlaw(verbose=False)
+        dust_wavel = dust_interp.grid[0]
 
         if wavelength[0] < dust_wavel[0]:
             raise ValueError(
@@ -516,61 +432,17 @@ class ReadModel:
                 f"({dust_wavel[-1]:.2e} um) of the grid with dust cross sections."
             )
 
-        # Read Bessell V-band filter profile
+        # For each radius-sigma pair, cross sections are normalized
+        # by the integrated cross section in the V-band
 
-        read_filter = ReadFilter("Generic/Bessell.V")
-        filt_trans = read_filter.get_filter()
+        cross_sections = dust_interp((wavelength, 10.0**powerlaw_max, powerlaw_exp))
 
-        # Create empty array for V-band extinction
-
-        cross_phot = np.zeros((dust_r_max.shape[0], dust_exp.shape[0]))
-
-        for i in range(dust_r_max.shape[0]):
-            for j in range(dust_exp.shape[0]):
-                # Calculate the filter-weighted average of the extinction cross sections
-
-                cross_interp = interp1d(
-                    dust_wavel, dust_cross[:, i, j], kind="linear", bounds_error=True
-                )
-
-                cross_tmp = cross_interp(filt_trans[:, 0])
-
-                integral1 = np.trapezoid(
-                    filt_trans[:, 1] * cross_tmp, x=filt_trans[:, 0]
-                )
-                integral2 = np.trapezoid(filt_trans[:, 1], x=filt_trans[:, 0])
-
-                cross_phot[i, j] = integral1 / integral2
-
-        # Interpolate the grid with the V-band extinction as
-        # function of geometric radius and standard deviation
-
-        cross_interp = RegularGridInterpolator(
-            (dust_r_max, dust_exp), cross_phot, method="linear", bounds_error=True
-        )
-
-        cross_v_band = cross_interp((10.0**r_max_interp, exp_interp))
-
-        # Create arrays with fixed particle properties
-
-        r_max_full = np.full(wavelength.shape[0], 10.0**r_max_interp)
-        exp_full = np.full(wavelength.shape[0], exp_interp)
-
-        # Interpolate the cross-sections for the input wavelengths
-        # and the geometric radius and standard deviation
-
-        cross_new = dust_interp(np.column_stack((wavelength, r_max_full, exp_full)))
-
-        # Calculate number of grains for the requested V-band extinction
-
-        n_grains = v_band_ext / cross_v_band / 2.5 / np.log10(np.exp(1.0))
-
-        return flux * np.exp(-cross_new * n_grains)
+        return flux * np.exp(-powerlaw_ext * cross_sections)
 
     @staticmethod
-    @typechecked
+    @beartype
     def apply_ext_ism(
-        wavelengths: np.ndarray, flux: np.ndarray, v_band_ext: float, v_band_red: float
+        wavelengths: np.ndarray, flux: np.ndarray, v_band_ext: Real, v_band_red: Real
     ) -> np.ndarray:
         """
         Internal function for applying ISM extinction to a spectrum.
@@ -594,11 +466,11 @@ class ReadModel:
 
         return flux * 10.0 ** (-0.4 * ext_mag)
 
-    @typechecked
+    @beartype
     def get_model(
         self,
-        model_param: Dict[str, float],
-        spec_res: Optional[float] = None,
+        model_param: Dict[str, Real],
+        spec_res: Optional[Real] = None,
         wavel_resample: Optional[np.ndarray] = None,
         magnitude: bool = False,
         ext_filter: Optional[str] = None,
@@ -616,6 +488,11 @@ class ReadModel:
             boundaries of the spectra in the database can be obtained
             with
             :func:`~species.read.read_model.ReadModel.get_bounds()`.
+            There are additional parameters that can be optionally
+            applied, also by including them as parameters in the
+            ``model_param`` dictionary. An overview of these parameters
+            can be obtained by printing the ``extra_param`` attribute
+            of a ``ReadModel`` object.
         spec_res : float, None
             Spectral resolution that is used for smoothing the spectrum
             with a Gaussian kernel. No smoothing is applied if the
@@ -876,11 +753,18 @@ class ReadModel:
         # Apply rotational broadening vsin(i) in km/s
 
         if "vsini" in model_param:
+            if "limb_dark" in model_param:
+                eps = model_param["limb_dark"]
+            else:
+                # eps = 0.6 is the default in rot_int_cmj
+                # https://github.com/Adolfo1519/RotBroadInt/blob/main/rotBroadInt.py
+                eps = 0.6
+
             model_box.flux = rot_int_cmj(
                 wavel=model_box.wavelength,
                 flux=model_box.flux,
                 vsini=model_param["vsini"],
-                eps=0.0,
+                eps=eps,
             )
 
         # Apply veiling
@@ -1042,10 +926,7 @@ class ReadModel:
                 # Check if the Vega spectrum is found in
                 # 'r' mode because the 'a' mode is not
                 # possible when using multiprocessing
-                if "spectra/calibration/vega" in hdf5_file:
-                    vega_found = True
-                else:
-                    vega_found = False
+                vega_found = "spectra/calibration/vega" in hdf5_file
 
             if not vega_found:
                 with h5py.File(self.database, "a") as hdf5_file:
@@ -1140,11 +1021,11 @@ class ReadModel:
 
         return model_box
 
-    @typechecked
+    @beartype
     def get_data(
         self,
-        model_param: Dict[str, float],
-        spec_res: Optional[float] = None,
+        model_param: Dict[str, Real],
+        spec_res: Optional[Real] = None,
         wavel_resample: Optional[np.ndarray] = None,
         ext_filter: Optional[str] = None,
     ) -> ModelBox:
@@ -1159,7 +1040,11 @@ class ReadModel:
         model_param : dict
             Model parameters and values. Only discrete values from the
             original grid are possible. Else, the nearest grid values
-            are selected.
+            are selected. There are additional parameters that can be
+            optionally applied, also by including them as parameters
+            in the ``model_param`` dictionary. An overview of these
+            parameters can be obtained by printing the ``extra_param``
+            attribute of a ``ReadModel`` object.
         spec_res : float, None
             Spectral resolution that is used for smoothing the spectrum
             with a Gaussian kernel. No smoothing is applied to the
@@ -1392,11 +1277,18 @@ class ReadModel:
         # Apply rotational broadening vsin(i) in km/s
 
         if "vsini" in model_param:
+            if "limb_dark" in model_param:
+                eps = model_param["limb_dark"]
+            else:
+                # eps = 0.6 is the default in rot_int_cmj
+                # https://github.com/Adolfo1519/RotBroadInt/blob/main/rotBroadInt.py
+                eps = 0.6
+
             model_box.flux = rot_int_cmj(
                 wavel=model_box.wavelength,
                 flux=model_box.flux,
                 vsini=model_param["vsini"],
-                eps=0.0,
+                eps=eps,
             )
 
         # Apply veiling
@@ -1421,12 +1313,8 @@ class ReadModel:
             and "lognorm_sigma" in model_param
             and "lognorm_ext" in model_param
         ):
-            model_box.flux = self.apply_lognorm_ext(
-                model_box.wavelength,
-                model_box.flux,
-                model_param["lognorm_radius"],
-                model_param["lognorm_sigma"],
-                model_param["lognorm_ext"],
+            raise NotImplementedError(
+                "Log-normal dust is nog yet implemented for get_data."
             )
 
         if (
@@ -1434,12 +1322,8 @@ class ReadModel:
             and "powerlaw_exp" in model_param
             and "powerlaw_ext" in model_param
         ):
-            model_box.flux = self.apply_powerlaw_ext(
-                model_box.wavelength,
-                model_box.flux,
-                model_param["powerlaw_max"],
-                model_param["powerlaw_exp"],
-                model_param["powerlaw_ext"],
+            raise NotImplementedError(
+                "Power-law dust is nog yet implemented for get_data."
             )
 
         if "ism_ext" in model_param or ext_filter is not None:
@@ -1613,10 +1497,10 @@ class ReadModel:
 
         return model_box
 
-    @typechecked
+    @beartype
     def get_flux(
-        self, model_param: Dict[str, float], synphot=None, return_box: bool = False
-    ) -> Union[Tuple[Optional[float], Optional[float]], PhotometryBox]:
+        self, model_param: Dict[str, Real], synphot=None, return_box: bool = False
+    ) -> Union[Tuple[Optional[Real], Optional[Real]], PhotometryBox]:
         """
         Function for calculating the average flux density for the
         ``filter_name``.
@@ -1682,12 +1566,12 @@ class ReadModel:
 
         return model_flux
 
-    @typechecked
+    @beartype
     def get_magnitude(
         self,
-        model_param: Dict[str, float],
+        model_param: Dict[str, Real],
         return_box: bool = False,
-    ) -> Union[Tuple[Optional[float], Optional[float]], PhotometryBox]:
+    ) -> Union[Tuple[Optional[Real], Optional[Real]], PhotometryBox]:
         """
         Function for calculating the apparent and absolute magnitudes
         for the ``filter_name``.
@@ -1797,8 +1681,8 @@ class ReadModel:
 
         return app_mag[0], abs_mag[0]
 
-    @typechecked
-    def get_bounds(self) -> Dict[str, Tuple[float, float]]:
+    @beartype
+    def get_bounds(self) -> Dict[str, Tuple[Real, Real]]:
         """
         Function for extracting the grid boundaries.
 
@@ -1819,7 +1703,7 @@ class ReadModel:
 
         return bounds
 
-    @typechecked
+    @beartype
     def get_wavelengths(self) -> np.ndarray:
         """
         Function for extracting the wavelength points.
@@ -1835,7 +1719,7 @@ class ReadModel:
 
         return wavelength
 
-    @typechecked
+    @beartype
     def get_points(self) -> Dict[str, np.ndarray]:
         """
         Function for extracting the grid points.
@@ -1859,7 +1743,7 @@ class ReadModel:
 
         return points
 
-    @typechecked
+    @beartype
     def get_parameters(self) -> List[str]:
         """
         Function for extracting the parameter names.
@@ -1884,8 +1768,8 @@ class ReadModel:
 
         return param
 
-    @typechecked
-    def get_sampling(self) -> float:
+    @beartype
+    def get_sampling(self) -> Real:
         """
         Function for returning the wavelength sampling,
         :math:`\\lambda/\\Delta\\lambda`, of the
@@ -1904,11 +1788,11 @@ class ReadModel:
 
         return np.mean(wavel_sampling)
 
-    @typechecked
+    @beartype
     def binary_spectrum(
         self,
-        model_param: Dict[str, float],
-        spec_res: Optional[float] = None,
+        model_param: Dict[str, Real],
+        spec_res: Optional[Real] = None,
         wavel_resample: Optional[np.ndarray] = None,
         **kwargs,
     ) -> ModelBox:
@@ -1999,10 +1883,10 @@ class ReadModel:
 
         return model_box
 
-    @typechecked
+    @beartype
     def integrate_spectrum(
-        self, model_param: Dict[str, float]
-    ) -> Tuple[float, Optional[float]]:
+        self, model_param: Dict[str, Real]
+    ) -> Tuple[Real, Optional[Real]]:
         """
         Function for calculating the bolometric flux by integrating
         a model spectrum at the requested parameters. Therefore, when
@@ -2083,10 +1967,10 @@ class ReadModel:
 
         return teff_int, log_lum
 
-    @typechecked
+    @beartype
     def create_color_magnitude(
         self,
-        model_param: Dict[str, float],
+        model_param: Dict[str, Real],
         filters_color: Tuple[str, str],
         filter_mag: str,
     ) -> ColorMagBox:
@@ -2170,10 +2054,10 @@ class ReadModel:
             sptype=param_list,
         )
 
-    @typechecked
+    @beartype
     def create_color_color(
         self,
-        model_param: Dict[str, float],
+        model_param: Dict[str, Real],
         filters_colors: Tuple[Tuple[str, str], Tuple[str, str]],
     ) -> ColorColorBox:
         """

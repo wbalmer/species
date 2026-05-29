@@ -9,7 +9,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.11', '3.12', '3.13']
 
     steps:
       - name: Checkout Project
@@ -52,5 +52,7 @@ jobs:
           # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/work/species/species/MultiNest/lib
           make test
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

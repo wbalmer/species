@@ -4,20 +4,21 @@ Utility functions for boxes.
 
 import warnings
 
-from typing import Dict, Optional
+from numbers import Real
 
 import numpy as np
 
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, Optional
 
 from species.core.box import ObjectBox
 from species.read.read_model import ReadModel
 from species.util.core_util import print_section
 
 
-@typechecked
+@beartype
 def update_objectbox(
-    objectbox: ObjectBox, model_param: Dict[str, float], model: Optional[str] = None
+    objectbox: ObjectBox, model_param: Dict[str, Real], model: Optional[str] = None
 ) -> ObjectBox:
     """
     Function for updating the spectra and/or photometric fluxes in
@@ -83,11 +84,6 @@ def update_objectbox(
             ):
                 # Inflate photometric uncertainty of an instrument
 
-                if f"error_{instr_name}" in model_param:
-                    infl_factor = model_param[f"error_{instr_name}"]
-                else:
-                    infl_factor = 10.0 ** model_param[f"error_{instr_name}"]
-
                 if model is None:
                     warnings.warn(
                         "The dictionary with model parameters "
@@ -97,9 +93,16 @@ def update_objectbox(
                         "of the errors is therefore not possible."
                     )
 
+                    var_add = None
+
                 else:
                     readmodel = ReadModel(model, filter_name=phot_key)
                     model_flux = readmodel.get_flux(model_param)[0]
+
+                    if f"error_{instr_name}" in model_param:
+                        infl_factor = model_param[f"error_{instr_name}"]
+                    else:
+                        infl_factor = 10.0 ** model_param[f"log_error_{instr_name}"]
 
                     var_add = infl_factor**2 * model_flux**2
 

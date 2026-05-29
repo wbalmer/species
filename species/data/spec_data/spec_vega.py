@@ -10,10 +10,10 @@ import pooch
 import requests
 
 from astropy.io import fits
-from typeguard import typechecked
+from beartype import beartype
 
 
-@typechecked
+@beartype
 def add_vega(input_path: str, database: h5py._hl.files.File) -> None:
     """
     Function for adding a flux-calibrated spectrum of Vega to the
@@ -90,4 +90,4 @@ def add_vega(input_path: str, database: h5py._hl.files.File) -> None:
     )
 
     print("\nReference: Bohlin et al. 2014, PASP, 126")
-    print("URL: https://ui.adsabs.harvard.edu/abs/2014PASP..126..711B/abstract")
+    print("URL: https://ui.adsabs.harvard.edu/abs/2014PASP..126..711B")

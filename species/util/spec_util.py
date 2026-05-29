@@ -5,18 +5,19 @@ Utility functions for manipulating spectra.
 import warnings
 
 from math import ceil
-from typing import Tuple, Union
+from numbers import Real
 
 import numpy as np
 
+from beartype import beartype
+from beartype.typing import Tuple, Union
 from scipy.ndimage import gaussian_filter
-from typeguard import typechecked
 
 
-@typechecked
+@beartype
 def create_wavelengths(
-    wavel_range: Tuple[Union[float, np.float32], Union[float, np.float32]],
-    wavel_sampling: float,
+    wavel_range: Tuple[Real, Real],
+    wavel_sampling: Real,
 ) -> np.ndarray:
     """
     Function for creating logarithmically-spaced wavelengths,
@@ -57,11 +58,11 @@ def create_wavelengths(
     return wavel_array
 
 
-@typechecked
+@beartype
 def smooth_spectrum(
     wavelength: np.ndarray,
     flux: np.ndarray,
-    spec_res: float,
+    spec_res: Real,
     kernel_size: int = 11,
     force_smooth: bool = False,
 ) -> np.ndarray:

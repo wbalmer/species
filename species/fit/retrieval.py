@@ -14,7 +14,7 @@ import time
 import warnings
 
 # from math import isclose
-from typing import Dict, List, Optional, Tuple, Union
+from numbers import Real
 
 import dynesty
 import matplotlib.pyplot as plt
@@ -30,12 +30,13 @@ except:
         "(Linux) or DYLD_LIBRARY_PATH (Mac)?"
     )
 
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
 from molmass import Formula
 from schwimmbad import MPIPool
 from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 from scipy.stats import invgamma, norm
-from typeguard import typechecked
 
 from species.core import constants
 from species.phot.syn_phot import SyntheticPhotometry
@@ -59,7 +60,6 @@ from species.util.retrieval_util import (
     scale_cloud_abund,
 )
 
-
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
@@ -73,7 +73,7 @@ class AtmosphericRetrieval:
     implementation of ``PyMultiNest`` or ``Dynesty``.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         object_name: str,
@@ -81,14 +81,14 @@ class AtmosphericRetrieval:
         cloud_species: Optional[List[str]] = None,
         res_mode: str = "c-k",
         output_folder: str = "multinest",
-        wavel_range: Optional[Tuple[float, float]] = None,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
         scattering: bool = True,
         inc_spec: Union[bool, List[str]] = True,
         inc_phot: Union[bool, List[str]] = False,
         pressure_grid: str = "smaller",
-        weights: Optional[Dict[str, float]] = None,
+        weights: Optional[Dict[str, Real]] = None,
         ccf_species: Optional[List[str]] = None,
-        max_pressure: float = 1e3,
+        max_pressure: Real = 1e3,
         lbl_opacity_sampling: Optional[int] = None,
     ) -> None:
         """
@@ -456,8 +456,8 @@ class AtmosphericRetrieval:
 
             print(f"   - {item} = {self.weights[item]:.2e}")
 
-    @typechecked
-    def rebin_opacities(self, spec_res: float, out_folder: str = "rebin_out") -> None:
+    @beartype
+    def rebin_opacities(self, spec_res: Real, out_folder: str = "rebin_out") -> None:
         """
         Function for downsampling the ``c-k`` opacities from
         :math:`\\lambda/\\Delta\\lambda = 1000` to a smaller wavelength
@@ -533,7 +533,7 @@ class AtmosphericRetrieval:
             spec_res, path=out_folder, species=self.line_species, masses=mol_masses
         )
 
-    @typechecked
+    @beartype
     def _set_parameters(
         self,
         bounds: dict,
@@ -767,9 +767,9 @@ class AtmosphericRetrieval:
         for item in self.parameters:
             print(f"   - {item}")
 
-    @typechecked
+    @beartype
     def _prior_transform(
-        self, cube, bounds: Dict[str, Tuple[float, float]], cube_index: Dict[str, int]
+        self, cube, bounds: Dict[str, Tuple[Real, Real]], cube_index: Dict[str, int]
     ):
         """
         Function to transform the sampled unit cube into a
@@ -1685,15 +1685,15 @@ class AtmosphericRetrieval:
 
         return cube
 
-    @typechecked
+    @beartype
     def _lnlike(
         self,
         cube,
-        bounds: Dict[str, Tuple[float, float]],
+        bounds: Dict[str, Tuple[Real, Real]],
         cube_index: Dict[str, int],
         rt_object,
         lowres_radtrans,
-    ) -> float:
+    ) -> Real:
         """
         Function for calculating the log-likelihood from the
         sampled parameter cube.
@@ -2978,7 +2978,7 @@ class AtmosphericRetrieval:
 
         return ln_prior + ln_like
 
-    @typechecked
+    @beartype
     def setup_retrieval(
         self,
         bounds: dict,
@@ -2988,13 +2988,13 @@ class AtmosphericRetrieval:
         fit_corr: Optional[List[str]] = None,
         cross_corr: Optional[List[str]] = None,
         check_isothermal: bool = False,
-        pt_smooth: Optional[float] = 0.3,
-        abund_smooth: Optional[float] = 0.3,
-        check_flux: Optional[float] = None,
+        pt_smooth: Optional[Real] = 0.3,
+        abund_smooth: Optional[Real] = 0.3,
+        check_flux: Optional[Real] = None,
         temp_nodes: Optional[int] = None,
         abund_nodes: Optional[int] = None,
-        prior: Optional[Dict[str, Tuple[float, float]]] = None,
-        check_phot_press: Optional[float] = None,
+        prior: Optional[Dict[str, Tuple[Real, Real]]] = None,
+        check_phot_press: Optional[Real] = None,
         apply_rad_vel: Optional[List[str]] = None,
         apply_vsini: Optional[List[str]] = None,
         global_fsed: bool = True,
@@ -3004,7 +3004,7 @@ class AtmosphericRetrieval:
         estimation and computation of the marginalized likelihood (i.e.
         model evidence), is done with ``PyMultiNest`` wrapper of the
         ``MultiNest`` sampler. While ``PyMultiNest`` can be installed
-        with ``pip`` from the PyPI repository, ``MultiNest`` has to to
+        with ``pip`` from the PyPI repository, ``MultiNest`` has to
         be compiled manually. See the ``PyMultiNest`` documentation:
         http://johannesbuchner.github.io/PyMultiNest/install.html.
         Note that the library path of ``MultiNest`` should be set to
@@ -3688,14 +3688,14 @@ class AtmosphericRetrieval:
             self.eq_chem = PreCalculatedEquilibriumChemistryTable()
             self.eq_chem.load()
 
-    @typechecked
+    @beartype
     def run_multinest(
         self,
         n_live_points: int = 1000,
         resume: bool = False,
         const_efficiency_mode: Optional[bool] = True,
-        sampling_efficiency: Optional[float] = 0.05,
-        evidence_tolerance: Optional[float] = 0.5,
+        sampling_efficiency: Optional[Real] = 0.05,
+        evidence_tolerance: Optional[Real] = 0.5,
         out_basename: Optional[str] = None,
         plotting: bool = False,
         **kwargs,
@@ -3705,7 +3705,7 @@ class AtmosphericRetrieval:
         estimation and computation of the marginalized likelihood (i.e.
         model evidence), is done with ``PyMultiNest`` wrapper of the
         ``MultiNest`` sampler. While ``PyMultiNest`` can be installed
-        with ``pip`` from the PyPI repository, ``MultiNest`` has to to
+        with ``pip`` from the PyPI repository, ``MultiNest`` has to
         be compiled manually. See the `PyMultiNest documentation
         <http://johannesbuchner.github.io/PyMultiNest/install.html>`_
         for further details. Note that the library path of
@@ -3825,7 +3825,7 @@ class AtmosphericRetrieval:
                 global_fsed=global_fsed,
             )
 
-        @typechecked
+        @beartype
         def _lnprior_multinest(cube, n_dim: int, n_param: int) -> None:
             """
             Function to transform the unit cube into the parameter
@@ -3849,10 +3849,8 @@ class AtmosphericRetrieval:
 
             self._prior_transform(cube, self.bounds, self.cube_index)
 
-        @typechecked
-        def _lnlike_multinest(
-            params, n_dim: int, n_param: int
-        ) -> Union[float, np.float64]:
+        @beartype
+        def _lnlike_multinest(params, n_dim: int, n_param: int) -> Real:
             """
             Function to calculate the log-likelihood for the
             sampled parameter cube.
@@ -3895,11 +3893,11 @@ class AtmosphericRetrieval:
             evidence_tolerance=evidence_tolerance,
         )
 
-    @typechecked
+    @beartype
     def run_dynesty(
         self,
         n_live_points: int = 2000,
-        evidence_tolerance: float = 0.5,
+        evidence_tolerance: Real = 0.5,
         dynamic: bool = False,
         sample_method: str = "auto",
         bound: str = "multi",

@@ -4,8 +4,11 @@ Utility functions for running the unit tests.
 
 import os
 
+from beartype import beartype
 
-def create_config(test_path):
+
+@beartype
+def create_config(test_path: str) -> None:
     """
     Function for creating a configuration file in the test folder.
 

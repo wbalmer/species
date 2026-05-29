@@ -6,17 +6,19 @@ import json
 import warnings
 
 from itertools import product
+from numbers import Real
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 
 from astropy import units as u
 
+from beartype import beartype
+from beartype.typing import Dict, Optional, Tuple, Union
+
 # from PyAstronomy.pyasl import fastRotBroad
 from scipy.interpolate import RegularGridInterpolator
 from spectres.spectral_resampling_numba import spectres_numba
-from typeguard import typechecked
 
 from species.core import constants
 from species.core.box import ModelBox, create_box
@@ -24,7 +26,7 @@ from species.util.dust_util import ism_extinction
 from species.util.spec_util import create_wavelengths, smooth_spectrum
 
 
-@typechecked
+@beartype
 def convert_model_name(in_name: str) -> str:
     """
     Function for updating a model name for use in plots.
@@ -65,11 +67,11 @@ def convert_model_name(in_name: str) -> str:
     return out_name
 
 
-@typechecked
+@beartype
 def powerlaw_spectrum(
-    wavel_range: Union[Tuple[float, float], Tuple[np.float32, np.float32]],
-    model_param: Dict[str, float],
-    spec_res: float = 100.0,
+    wavel_range: Tuple[Real, Real],
+    model_param: Dict[str, Real],
+    spec_res: Real = 100.0,
 ) -> ModelBox:
     """
     Function for calculating a power-law spectrum. The power-law
@@ -115,11 +117,11 @@ def powerlaw_spectrum(
     return model_box
 
 
-@typechecked
+@beartype
 def gaussian_spectrum(
-    wavel_range: Union[Tuple[float, float], Tuple[np.float32, np.float32]],
-    model_param: Dict[str, float],
-    spec_res: float = 100.0,
+    wavel_range: Tuple[Real, Real],
+    model_param: Dict[str, Real],
+    spec_res: Real = 100.0,
     double_gaussian: bool = False,
 ) -> ModelBox:
     """
@@ -182,8 +184,8 @@ def gaussian_spectrum(
     return model_box
 
 
-@typechecked
-def binary_to_single(param_dict: Dict[str, float], star_index: int) -> Dict[str, float]:
+@beartype
+def binary_to_single(param_dict: Dict[str, Real], star_index: int) -> Dict[str, Real]:
     """
     Function for converting a dictionary with atmospheric parameters
     of a binary system to a dictionary of parameters for one of the
@@ -220,10 +222,10 @@ def binary_to_single(param_dict: Dict[str, float], star_index: int) -> Dict[str,
     return new_dict
 
 
-@typechecked
+@beartype
 def extract_disk_param(
-    param_dict: Dict[str, float], disk_index: Optional[int] = None
-) -> Dict[str, float]:
+    param_dict: Dict[str, Real], disk_index: Optional[int] = None
+) -> Dict[str, Real]:
     """
     Function for extracting the blackbody disk parameters from a
     dictionary with a mix of atmospheric and blackbody parameters.
@@ -266,15 +268,16 @@ def extract_disk_param(
     return new_dict
 
 
-@typechecked
+@beartype
 def apply_obs(
     model_flux: np.ndarray,
     model_wavel: Optional[np.ndarray] = None,
-    model_param: Optional[Dict[str, float]] = None,
+    model_param: Optional[Dict[str, Real]] = None,
     data_wavel: Optional[np.ndarray] = None,
-    spec_res: Optional[float] = None,
-    rot_broad: Optional[float] = None,
-    rad_vel: Optional[float] = None,
+    spec_res: Optional[Real] = None,
+    rot_broad: Optional[Real] = None,
+    limb_dark: Optional[Real] = 0.6,
+    rad_vel: Optional[Real] = None,
     cross_sections: Optional[RegularGridInterpolator] = None,
     ext_model: Optional[str] = None,
 ) -> np.ndarray:
@@ -306,6 +309,10 @@ def apply_obs(
     rot_broad : float, None
         Rotational broadening :math:`v\\sin{i}` (km/s). Not
         applied if the argument is set to ``None``.
+    limb_dark : float
+        Linear limb darkening coefficient in the range of 0.0
+        to 1.0 (default: 0.6). This parameter is only applied
+        in combination with setting ``rot_broad``.
     rad_vel : float, None
         Radial velocity (km/s). Not applied if the argument
         is set to ``None``.
@@ -339,7 +346,7 @@ def apply_obs(
             wavel=model_wavel,
             flux=model_flux,
             vsini=rot_broad,
-            eps=0.0,
+            eps=limb_dark,
         )
 
     # Apply extinction
@@ -384,47 +391,27 @@ def apply_obs(
             model_wavel[wavel_select] * u.micron, Av=model_param["ext_av"]
         )
 
-    # elif "lognorm_ext" in model_param:
-    #     cross_tmp = cross_sections["Generic/Bessell.V"](
-    #         (10.0 ** model_param["lognorm_radius"], model_param["lognorm_sigma"])
-    #     )
-    #
-    #     n_grains = (
-    #         model_param["lognorm_ext"] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
-    #     )
-    #
-    #     cross_tmp = cross_sections["spectrum"](
-    #         (
-    #             model_wavel,
-    #             10.0 ** model_param["lognorm_radius"],
-    #             model_param["lognorm_sigma"],
-    #         )
-    #     )
-    #
-    #     n_grains = (
-    #         model_param["lognorm_ext"] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
-    #     )
-    #
-    #     model_flux *= np.exp(-cross_tmp * n_grains)
-    #
-    # elif "powerlaw_ext" in model_param:
-    #     cross_tmp = cross_sections["Generic/Bessell.V"](
-    #         (10.0 ** model_param["powerlaw_max"], model_param["powerlaw_exp"])
-    #     )
-    #
-    #     n_grains = (
-    #         model_param["powerlaw_ext"] / cross_tmp / 2.5 / np.log10(np.exp(1.0))
-    #     )
-    #
-    #     cross_tmp = cross_sections["spectrum"](
-    #         (
-    #             model_wavel,
-    #             10.0 ** model_param["powerlaw_max"],
-    #             model_param["powerlaw_exp"],
-    #         )
-    #     )
-    #
-    #     model_flux *= np.exp(-cross_tmp * n_grains)
+    elif "lognorm_ext" in model_param:
+        cross_tmp = cross_sections(
+            (
+                model_wavel,
+                10.0 ** model_param["lognorm_radius"],
+                model_param["lognorm_sigma"],
+            )
+        )
+
+        model_flux *= np.exp(-model_param["lognorm_ext"] * cross_tmp)
+
+    elif "powerlaw_ext" in model_param:
+        cross_tmp = cross_sections(
+            (
+                model_wavel,
+                10.0 ** model_param["powerlaw_max"],
+                model_param["powerlaw_exp"],
+            )
+        )
+
+        model_flux *= np.exp(-model_param["powerlaw_ext"] * cross_tmp)
 
     # elif self.ext_filter is not None:
     #     ism_reddening = all_param.get("ism_red", 3.1)
@@ -514,20 +501,20 @@ def apply_obs(
     return model_flux
 
 
-@typechecked
+@beartype
 def rot_int_cmj(
     wavel: np.ndarray,
     flux: np.ndarray,
-    vsini: float,
-    eps: float = 0.6,
+    vsini: Real,
+    eps: Real = 0.6,
     nr: int = 10,
     ntheta: int = 100,
-    dif: float = 0.0,
+    dif: Real = 0.0,
 ):
     """
     A routine to quickly rotationally broaden a spectrum in linear time.
     This function has been adopted from `Carvalho & Johns-Krull (2023)
-    <https://ui.adsabs.harvard.edu/abs/2023RNAAS...7...91C/abstract>`_.
+    <https://ui.adsabs.harvard.edu/abs/2023RNAAS...7...91C>`_.
 
     Parameters
     ----------
@@ -567,6 +554,7 @@ def rot_int_cmj(
 
     for j in range(nr):
         r = dr / 2.0 + j * dr
+
         area = (
             ((r + dr / 2.0) ** 2 - (r - dr / 2.0) ** 2)
             / int(ntheta * r)
@@ -575,31 +563,22 @@ def rot_int_cmj(
 
         for k in range(int(ntheta * r)):
             th = np.pi / int(ntheta * r) + k * 2.0 * np.pi / int(ntheta * r)
+            vl = r * vsini * np.sin(th)
 
             if dif != 0:
-                vl = (
-                    vsini
-                    * r
-                    * np.sin(th)
-                    * (
-                        1.0
-                        - dif / 2.0
-                        - dif / 2.0 * np.cos(2.0 * np.arccos(r * np.cos(th)))
-                    )
-                )
-            else:
-                vl = r * vsini * np.sin(th)
+                vl *= (1.0 - dif / 2.0 - dif / 2.0 * np.cos(2.0 * np.arccos(r * np.cos(th))))
 
             ns += area * np.interp(
                 wavel + wavel * vl / (1e-3 * constants.LIGHT), wavel, flux
             )
+
             tarea += area
 
     return ns / tarea
 
 
-@typechecked
-def check_nearest_spec(model_name: str, model_param: Dict[str, float]):
+@beartype
+def check_nearest_spec(model_name: str, model_param: Dict[str, Real]):
     """
     Check if the nearest grid points of the requested model parameters
     have a spectrum stored in the database. For some grids, spectra

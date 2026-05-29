@@ -6,13 +6,14 @@ import os
 import warnings
 
 from configparser import ConfigParser
-from typing import Dict, List, Optional, Tuple, Union
+from numbers import Real
 
 import h5py
 import numpy as np
 
-from scipy.interpolate import griddata, interp1d
-from typeguard import typechecked
+from beartype import beartype
+from beartype.typing import Dict, List, Optional, Tuple, Union
+from scipy.interpolate import griddata, interp1d, RegularGridInterpolator
 
 from species.core.box import (
     ColorMagBox,
@@ -31,20 +32,20 @@ from species.util.plot_util import update_labels
 
 class ReadIsochrone:
     """
-    Class for reading isochrone data from the database.
-    This class interpolates the evolutionary track or
-    isochrone data. Please carefully check for interpolation
-    effects. Setting ``masses=None`` in
+    Class for reading isochrone data from the database. This class
+    interpolates the evolutionary tracks. Please carefully check
+    for interpolation effects since some grids show non-linear
+    variations between grid points. Setting ``masses=None`` in
     :func:`~species.read.read_isochrone.ReadIsochrone.get_isochrone`
     extracts the isochrones at the masses of the original
     grid, so using that option helps with comparing results
     for which the masses have been interpolated. Similarly, by
-    setting ``ages=None`` with the
-    :func:`~species.read.read_isochrone.ReadIsochrone.get_isochrone`
-    method will fix the ages to those of the original grid.
+    setting ``ages=None`` with the :func:`~species.read.
+    read_isochrone.ReadIsochrone.get_cooling_track` method
+    will set the ages to those of the original grid.
     """
 
-    @typechecked
+    @beartype
     def __init__(
         self,
         tag: Optional[str] = None,
@@ -57,10 +58,9 @@ class ReadIsochrone:
         ----------
         tag : str, None
             Database tag of the isochrone data (e.g. 'ames-cond',
-            'sonora+0.0', 'atmo-ceq'). A list with the isochrone
-            data that are stored in the current ``species``
-            database is printed if the argument of ``tag`` is
-            set to ``None``.
+            'sonora-bobcat+0.0', 'atmo-ceq'). A list with the isochrone
+            data that are stored in the current database is
+            printed if the argument of ``tag`` is set to ``None``.
         create_regular_grid : bool
             Evolutionary grids can be irregular in the (age, mass)
             space. By setting ``create_regular_grid=True``, the
@@ -76,11 +76,12 @@ class ReadIsochrone:
             of the grid. However, please carefully check results
             since there might be inaccuracies in the extrapolated
             parts of the parameter space, in particular for the
-            cooling curves extracted with
-            :func:`~species.read.read_isochrone.ReadIsochrone.get_cooling_track`.
-            This is therefore an experimental parameter.
+            cooling tracks extracted with :func:`~species.read.
+            read_isochrone.ReadIsochrone.get_cooling_track`, so
+            because ``get_cooling_track`` is an experimental
+            parameter.
         verbose : bool
-            Print output.
+            Print output information.
         interp_method : str
             Interpolation method for the isochrone data. The argument
             should be either 'linear', for using a linear 2D
@@ -101,18 +102,31 @@ class ReadIsochrone:
         self.tag = tag
         self.create_regular_grid = create_regular_grid
         self.verbose = verbose
+        self.regular_grid = None
 
         if self.verbose:
             print_section("Read isochrone grid")
             print(f"Database tag: {self.tag}")
             print(f"Create regular grid: {self.create_regular_grid}")
 
-        config_file = os.path.join(os.getcwd(), "species_config.ini")
+        if "SPECIES_CONFIG" in os.environ:
+            config_file = os.environ["SPECIES_CONFIG"]
+        else:
+            config_file = os.path.join(os.getcwd(), "species_config.ini")
 
         config = ConfigParser()
         config.read(config_file)
 
         self.database = config["species"]["database"]
+
+        with h5py.File(self.database, "r") as hdf5_file:
+            if "isochrones" not in hdf5_file:
+                raise ValueError(
+                    "There are no isochrone data stored in the "
+                    "database. Please use the add_isochrones "
+                    "method of Database to add a grid of "
+                    "isochrones."
+                )
 
         if self.tag is None:
             with h5py.File(self.database, "r") as hdf5_file:
@@ -131,7 +145,7 @@ class ReadIsochrone:
                 tag_list = list(hdf5_file["isochrones"])
 
                 raise ValueError(
-                    f"There is no isochrone data stored with the "
+                    f"There are no isochrone data stored with the "
                     f"selected tag '{tag}'. The following isochrone "
                     f"tags are found in the database: {tag_list}"
                 )
@@ -144,6 +158,9 @@ class ReadIsochrone:
             "atmo-ceq": ("atmo-ceq", None),
             "atmo-neq-strong": ("atmo-neq-strong", None),
             "atmo-neq-weak": ("atmo-neq-weak", None),
+            "atmo-ceq-chabrier2023": ("atmo-ceq", None),
+            "atmo-neq-strong-chabrier2023": ("atmo-neq-strong", None),
+            "atmo-neq-weak-chabrier2023": ("atmo-neq-weak", None),
             "bt-settl": ("bt-settl", None),
             "linder2019-petitCODE-metal_-0.4": (
                 "petitcode-linder2019-clear",
@@ -187,9 +204,9 @@ class ReadIsochrone:
             ),
             "saumon2008-nc_solar": ("saumon2008-clear", None),
             "saumon2008-f2_solar": ("saumon2008-cloudy", None),
-            "sonora-0.5": ("sonora-bobcat", {"feh": -0.5}),
-            "sonora+0.0": ("sonora-bobcat", {"feh": 0.0}),
-            "sonora+0.5": ("sonora-bobcat", {"feh": 0.5}),
+            "sonora-bobcat-0.5": ("sonora-bobcat", {"feh": -0.5}),
+            "sonora-bobcat+0.0": ("sonora-bobcat", {"feh": 0.0}),
+            "sonora-bobcat+0.5": ("sonora-bobcat", {"feh": 0.5}),
             "sonora-diamondback-hybrid-0.5": ("sonora-diamondback", {"feh": -0.5}),
             "sonora-diamondback-hybrid+0.0": ("sonora-diamondback", {"feh": 0.0}),
             "sonora-diamondback-hybrid+0.5": ("sonora-diamondback", {"feh": 0.5}),
@@ -219,6 +236,7 @@ class ReadIsochrone:
         self.logg_interp = None
         self.radius_interp = None
         self.mass_interp = None
+        self.sinit_interp = None
         self.interp_method = interp_method
 
         if self.interp_method not in ["linear", "cubic"]:
@@ -227,29 +245,18 @@ class ReadIsochrone:
                 "be set to 'linear' or 'cubic'."
             )
 
-    @typechecked
-    def _read_data(
+    @beartype
+    def read_data(
         self,
-    ) -> Tuple[
-        str,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        Optional[np.ndarray],
-    ]:
+    ) -> Dict[str, np.ndarray]:
         """
         Internal function for reading the evolutionary
         data from the database.
 
         Returns
         -------
-        str
-            Model name.
-        np.ndarray
-            Array with the age (Myr).
+        dict
+            Dictionary with arrays containing the age (Myr),
         np.ndarray
             Array with the mass (:math:`M_\\mathrm{J}`).
         np.ndarray
@@ -260,6 +267,9 @@ class ReadIsochrone:
             Array with the :math:`\\log{(g)}`.
         np.ndarray
             Array with the radius (:math:`R_\\mathrm{J}`).
+        np.ndarray
+            Optional array with the initial entropy
+            (:math:`k_B/\\mathrm{baryon}`).
         np.ndarray, None
             Optional array with the absolute magnitudes. The
             array has two axes with the length of the second
@@ -267,25 +277,55 @@ class ReadIsochrone:
             there are magnitudes available.
         """
 
+        iso_data = {}
         iso_mag = None
         new_mag = None
 
         with h5py.File(self.database, "r") as hdf5_file:
-            model_name = hdf5_file[f"isochrones/{self.tag}/age"].attrs["model"]
+            # if "model" in hdf5_file[f"isochrones/{self.tag}"].attrs:
+            #     model_name = hdf5_file[f"isochrones/{self.tag}"].attrs["model"]
+            # else:
+            #     model_name = hdf5_file[f"isochrones/{self.tag}/age"].attrs["model"]
 
-            iso_age = np.asarray(hdf5_file[f"isochrones/{self.tag}/age"])
-            iso_mass = np.asarray(hdf5_file[f"isochrones/{self.tag}/mass"])
-            iso_teff = np.asarray(hdf5_file[f"isochrones/{self.tag}/teff"])
-            iso_loglum = np.asarray(hdf5_file[f"isochrones/{self.tag}/log_lum"])
-            iso_logg = np.asarray(hdf5_file[f"isochrones/{self.tag}/log_g"])
-            iso_radius = np.asarray(hdf5_file[f"isochrones/{self.tag}/radius"])
+            if "regular_grid" in hdf5_file[f"isochrones/{self.tag}"].attrs:
+                self.regular_grid = hdf5_file[f"isochrones/{self.tag}"].attrs[
+                    "regular_grid"
+                ]
+            else:
+                self.regular_grid = False
+
+            iso_data["age"] = np.asarray(hdf5_file[f"isochrones/{self.tag}/age"])
+            iso_data["mass"] = np.asarray(hdf5_file[f"isochrones/{self.tag}/mass"])
+            iso_data["log_lum"] = np.asarray(
+                hdf5_file[f"isochrones/{self.tag}/log_lum"]
+            )
+
+            if "teff" in hdf5_file[f"isochrones/{self.tag}"]:
+                iso_data["teff"] = np.asarray(hdf5_file[f"isochrones/{self.tag}/teff"])
+
+            if "log_g" in hdf5_file[f"isochrones/{self.tag}"]:
+                iso_data["log_g"] = np.asarray(
+                    hdf5_file[f"isochrones/{self.tag}/log_g"]
+                )
+
+            if "radius" in hdf5_file[f"isochrones/{self.tag}"]:
+                iso_data["radius"] = np.asarray(
+                    hdf5_file[f"isochrones/{self.tag}/radius"]
+                )
+
+            if "s_init" in hdf5_file[f"isochrones/{self.tag}"]:
+                iso_data["s_init"] = np.asarray(
+                    hdf5_file[f"isochrones/{self.tag}/s_init"]
+                )
 
             if f"isochrones/{self.tag}/magnitudes" in hdf5_file:
-                iso_mag = np.asarray(hdf5_file[f"isochrones/{self.tag}/magnitudes"])
+                iso_data["mag"] = np.asarray(
+                    hdf5_file[f"isochrones/{self.tag}/magnitudes"]
+                )
 
-        if self.create_regular_grid:
-            age_unique = np.unique(iso_age)
-            mass_unique = np.unique(iso_mass)
+        if self.create_regular_grid and not self.regular_grid:
+            age_unique = np.unique(iso_data["age"])
+            mass_unique = np.unique(iso_data["mass"])
 
             n_ages = age_unique.shape[0]
             n_masses = mass_unique.shape[0]
@@ -297,19 +337,19 @@ class ReadIsochrone:
             new_logg = np.zeros((n_ages * n_masses))
             new_radius = np.zeros((n_ages * n_masses))
 
-            if iso_mag is not None:
-                new_mag = np.zeros(((n_ages * n_masses, iso_mag.shape[1])))
+            if "mag" in iso_data:
+                new_mag = np.zeros(((n_ages * n_masses, iso_data["mag"].shape[1])))
 
             for age_idx, age_item in enumerate(age_unique):
-                age_select = iso_age == age_item
+                age_select = iso_data["age"] == age_item
                 ages_tmp = np.full(n_masses, age_item)
 
                 new_age[age_idx * n_masses : (age_idx + 1) * n_masses] = ages_tmp
                 new_mass[age_idx * n_masses : (age_idx + 1) * n_masses] = mass_unique
 
                 interp_teff = interp1d(
-                    iso_mass[age_select],
-                    iso_teff[age_select],
+                    iso_data["mass"][age_select],
+                    iso_data["teff"][age_select],
                     fill_value="extrapolate",
                 )
 
@@ -318,8 +358,8 @@ class ReadIsochrone:
                 )
 
                 interp_loglum = interp1d(
-                    iso_mass[age_select],
-                    iso_loglum[age_select],
+                    iso_data["mass"][age_select],
+                    iso_data["log_lum"][age_select],
                     fill_value="extrapolate",
                 )
 
@@ -328,8 +368,8 @@ class ReadIsochrone:
                 )
 
                 interp_logg = interp1d(
-                    iso_mass[age_select],
-                    iso_logg[age_select],
+                    iso_data["mass"][age_select],
+                    iso_data["log_g"][age_select],
                     fill_value="extrapolate",
                 )
 
@@ -338,8 +378,8 @@ class ReadIsochrone:
                 )
 
                 interp_radius = interp1d(
-                    iso_mass[age_select],
-                    iso_radius[age_select],
+                    iso_data["mass"][age_select],
+                    iso_data["radius"][age_select],
                     fill_value="extrapolate",
                 )
 
@@ -347,11 +387,11 @@ class ReadIsochrone:
                     interp_radius(mass_unique)
                 )
 
-                if iso_mag is not None:
-                    for mag_idx in range(iso_mag.shape[1]):
+                if iso_data["mag"] is not None:
+                    for mag_idx in range(iso_data["mag"].shape[1]):
                         interp_mag = interp1d(
-                            iso_mass[age_select],
-                            iso_mag[age_select, mag_idx],
+                            iso_data["mass"][age_select],
+                            iso_data["mag"][age_select, mag_idx],
                             fill_value="extrapolate",
                         )
 
@@ -359,31 +399,22 @@ class ReadIsochrone:
                             age_idx * n_masses : (age_idx + 1) * n_masses, mag_idx
                         ] = interp_mag(mass_unique)
 
-            iso_age = new_age.copy()
-            iso_mass = new_mass.copy()
-            iso_teff = new_teff.copy()
-            iso_loglum = new_loglum.copy()
-            iso_logg = new_logg.copy()
-            iso_radius = new_radius.copy()
+            iso_data["age"] = new_age.copy()
+            iso_data["mass"] = new_mass.copy()
+            iso_data["teff"] = new_teff.copy()
+            iso_data["log_lum"] = new_loglum.copy()
+            iso_data["log_g"] = new_logg.copy()
+            iso_data["radius"] = new_radius.copy()
 
-            if iso_mag is not None:
-                iso_mag = new_mag.copy()
+            if "mag" in iso_data:
+                iso_data["mag"] = new_mag.copy()
 
-        return (
-            model_name,
-            iso_age,
-            iso_mass,
-            iso_teff,
-            iso_loglum,
-            iso_logg,
-            iso_radius,
-            iso_mag,
-        )
+        return iso_data
 
-    @typechecked
+    @beartype
     def _check_model(self, atmospheric_model: Optional[str]) -> str:
         """
-        Internal function for matching the atmospheric model with
+        Function for matching the atmospheric model with
         the evolutionary model and checking if the expected
         atmospheric model is used.
 
@@ -405,7 +436,7 @@ class ReadIsochrone:
                 atmospheric_model = self.match_model[self.tag][0]
             else:
                 raise ValueError(
-                    "Can not find the atmosphere model "
+                    "Can't find the atmosphere model "
                     f"associated with the '{self.tag}' "
                     "evolutionary model. Please contact "
                     "the code maintainer."
@@ -428,14 +459,14 @@ class ReadIsochrone:
 
         return atmospheric_model
 
-    @typechecked
+    @beartype
     def _update_param(
         self,
         atmospheric_model: str,
-        model_param: Dict[str, float],
-        param_bounds: Dict[str, Tuple[float, float]],
-        extra_param: Dict[str, float],
-    ) -> Tuple[Dict[str, float], Dict[str, float]]:
+        model_param: Dict[str, Real],
+        param_bounds: Dict[str, Tuple[Real, Real]],
+        extra_param: Dict[str, Real],
+    ) -> Tuple[Dict[str, Real], Dict[str, Real]]:
         """
         Internal function for updating the dictionary with model
         parameters for the atmospheric model. Parameters that are
@@ -491,9 +522,9 @@ class ReadIsochrone:
             "sonora-diamondback-hybrid-grav+0.0",
             "sonora-diamondback-hybrid-grav+0.5",
         ]:
+            # TODO For Teff < 1300 K there were no clouds included in
+            # the model so best to use Sonora Bobcat for the spectra?
             # See https://zenodo.org/records/12735103
-            # For Teff < 1300 K there were no clouds included in the
-            # model so best to use Sonora Bobcat for the spectra?
             if model_param["teff"] > 1300.0:
                 extra_param["fsed"] = 2.0
 
@@ -519,8 +550,8 @@ class ReadIsochrone:
 
         return model_param, extra_param
 
-    @typechecked
-    def grid_points(self) -> Dict[str, np.ndarray]:
+    @beartype
+    def get_points(self) -> Dict[str, np.ndarray]:
         """
         Function for returning a dictionary with the unique grid points
         of the parameters of the evolutionary data. The grid may not
@@ -533,32 +564,23 @@ class ReadIsochrone:
             the unique values in the grid of evolutionary data.
         """
 
-        (
-            model,
-            iso_age,
-            iso_mass,
-            iso_teff,
-            iso_loglum,
-            iso_logg,
-            iso_radius,
-            iso_mag,
-        ) = self._read_data()
+        iso_data = self.read_data()
 
         grid_points = {
-            "age": iso_age,
-            "mass": iso_mass,
-            "radius": iso_radius,
-            "log_lum": iso_loglum,
-            "teff": iso_teff,
-            "logg": iso_logg,
+            "age": iso_data["age"],
+            "mass": iso_data["mass"],
         }
+
+        if "s_init" in iso_data:
+            grid_points["s_init"] = iso_data["s_init"]
 
         return grid_points
 
-    @typechecked
+    @beartype
     def get_isochrone(
         self,
-        age: float,
+        age: Real,
+        s_init: Optional[Real] = None,
         masses: Optional[np.ndarray] = None,
         filter_mag: Optional[str] = None,
         filters_color: Optional[Tuple[str, str]] = None,
@@ -570,7 +592,13 @@ class ReadIsochrone:
         Parameters
         ----------
         age : float
-            Age (Myr) at which the isochrone data is interpolated.
+            Age (Myr) at which the isochrone data will get
+            interpolated.
+        s_init : float, None
+            Initial entropy (k_b/baryon) at which the isochrone
+            data will get interpolated. This parameter is only
+            needed by the ``tag='marleau'`` model and can be
+            set to ``None`` otherwise.
         masses : np.ndarray, None
             Masses (:math:`M_\\mathrm{J}`) at which the isochrone
             data is interpolated. The masses are not interpolated
@@ -609,30 +637,60 @@ class ReadIsochrone:
 
         # Read isochrone data
 
-        (
-            model,
-            iso_age,
-            iso_mass,
-            iso_teff,
-            iso_loglum,
-            iso_logg,
-            iso_radius,
-            iso_mag,
-        ) = self._read_data()
+        iso_data = self.read_data()
 
         if masses is None:
-            idx_min = (np.abs(iso_age - age)).argmin()
-            age_select = iso_age == iso_age[idx_min]
-            masses = np.unique(iso_mass[age_select])  # (Mjup)
+            if self.regular_grid:
+                masses = iso_data["mass"]
 
-            if masses.size < 5:
-                # This can happen if the age sampling in the
-                # isochrone grid was different for each mass,
-                # for example baraffe+2015
-                masses = np.unique(iso_mass)  # (Mjup)
+            else:
+                idx_min = (np.abs(iso_data["age"] - age)).argmin()
+                age_select = iso_data["age"] == iso_data["age"][idx_min]
+                masses = np.unique(iso_data["mass"][age_select])  # (Mjup)
+
+                if masses.size < 5:
+                    # This can happen if the age sampling in the
+                    # isochrone grid was different for each mass,
+                    # for example baraffe+2015
+                    masses = np.unique(iso_data["mass"])  # (Mjup)
+
+        # Check if initial entropy is provided
+
+        if s_init is None and "s_init" in iso_data:
+            raise ValueError(
+                "The initial entropy is a parameter of the "
+                f"'{self.tag}' model so please set the 's_init' "
+                "parameter."
+            )
+
+        # Create array with grid points
 
         age_points = np.full(masses.shape[0], age)  # (Myr)
-        grid_points = np.column_stack([iso_age, iso_mass])
+
+        if self.regular_grid:
+            grid_points = [iso_data["age"], iso_data["mass"]]
+
+            if "s_init" in iso_data:
+                grid_points.append(iso_data["s_init"])
+
+        else:
+            if "s_init" in iso_data:
+                grid_points = np.column_stack(
+                    [iso_data["age"], iso_data["mass"], iso_data["s_init"]]
+                )
+            else:
+                grid_points = np.column_stack([iso_data["age"], iso_data["mass"]])
+
+        # Parameter values to interpolate the evolutionary tracks
+
+        if "s_init" in iso_data:
+            s_i_points = np.full(masses.shape[0], s_init)  # (k_b/baryon)
+            interp_values = np.column_stack([age_points, masses, s_i_points])
+
+        else:
+            interp_values = np.column_stack([age_points, masses])
+
+        # Check if the isochrone table has magnitudes
 
         filters = self.get_filters()
 
@@ -664,23 +722,43 @@ class ReadIsochrone:
                         f"filters: {filters}"
                     )
 
-                mag_color_1 = griddata(
-                    points=grid_points,
-                    values=iso_mag[:, index_color_1],
-                    xi=np.stack((age_points, masses), axis=1),
-                    method="linear",
-                    fill_value="nan",
-                    rescale=False,
-                )
+                if self.regular_grid:
+                    mag_color_1 = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_color_1],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
 
-                mag_color_2 = griddata(
-                    points=grid_points,
-                    values=iso_mag[:, index_color_2],
-                    xi=np.stack((age_points, masses), axis=1),
-                    method="linear",
-                    fill_value="nan",
-                    rescale=False,
-                )
+                else:
+                    mag_color_1 = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_color_1],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
+
+                if self.regular_grid:
+                    mag_color_2 = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_color_2],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
+
+                else:
+                    mag_color_2 = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_color_2],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
 
                 color = mag_color_1 - mag_color_2
 
@@ -697,29 +775,51 @@ class ReadIsochrone:
                         f"following filters: {filters}"
                     )
 
-                mag_abs = griddata(
+                if self.regular_grid:
+                    mag_abs = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_mag],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
+
+                else:
+                    mag_abs = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_mag],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
+
+        # Interpolation of Teff
+
+        if (
+            "teff" in iso_data
+            and self.teff_interp is None
+            and (param_interp is None or "teff" in param_interp)
+        ):
+            if self.regular_grid:
+                self.teff_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["teff"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.teff_interp = grid_interp(
                     points=grid_points,
-                    values=iso_mag[:, index_mag],
-                    xi=np.stack((age_points, masses), axis=1),
-                    method="linear",
+                    values=iso_data["teff"],
                     fill_value="nan",
                     rescale=False,
                 )
 
-        # Interpolation of Teff
-
-        if self.teff_interp is None and (
-            param_interp is None or "teff" in param_interp
-        ):
-            self.teff_interp = grid_interp(
-                points=grid_points,
-                values=iso_teff,
-                fill_value="nan",
-                rescale=False,
-            )
-
         if self.teff_interp is not None:
-            teff = self.teff_interp(np.stack((age_points, masses), axis=1))
+            teff = self.teff_interp(interp_values)
         else:
             teff = None
 
@@ -728,49 +828,83 @@ class ReadIsochrone:
         if self.loglum_interp is None and (
             param_interp is None or "log_lum" in param_interp
         ):
-            self.loglum_interp = grid_interp(
-                points=grid_points,
-                values=iso_loglum,
-                fill_value="nan",
-                rescale=False,
-            )
+            if self.regular_grid:
+                self.loglum_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["log_lum"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.loglum_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["log_lum"],
+                    fill_value="nan",
+                    rescale=False,
+                )
 
         if self.loglum_interp is not None:
-            log_lum = self.loglum_interp(np.stack((age_points, masses), axis=1))
+            log_lum = self.loglum_interp(interp_values)
         else:
             log_lum = None
 
         # Interpolation of log(g)
 
-        if self.logg_interp is None and (
-            param_interp is None or "logg" in param_interp
+        if (
+            "log_g" in iso_data
+            and self.logg_interp is None
+            and (param_interp is None or "logg" in param_interp)
         ):
-            self.logg_interp = grid_interp(
-                points=grid_points,
-                values=iso_logg,
-                fill_value="nan",
-                rescale=False,
-            )
+            if self.regular_grid:
+                self.logg_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["log_g"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.logg_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["log_g"],
+                    fill_value="nan",
+                    rescale=False,
+                )
 
         if self.logg_interp is not None:
-            logg = self.logg_interp(np.stack((age_points, masses), axis=1))
+            logg = self.logg_interp(interp_values)
         else:
             logg = None
 
         # Interpolation of radius
 
-        if self.radius_interp is None and (
-            param_interp is None or "radius" in param_interp
+        if (
+            "radius" in iso_data
+            and self.radius_interp is None
+            and (param_interp is None or "radius" in param_interp)
         ):
-            self.radius_interp = grid_interp(
-                points=grid_points,
-                values=iso_radius,
-                fill_value="nan",
-                rescale=False,
-            )
+            if self.regular_grid:
+                self.radius_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["radius"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.radius_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["radius"],
+                    fill_value="nan",
+                    rescale=False,
+                )
 
         if self.radius_interp is not None:
-            radius = self.radius_interp(np.stack((age_points, masses), axis=1))
+            radius = self.radius_interp(interp_values)
         else:
             radius = None
 
@@ -798,6 +932,7 @@ class ReadIsochrone:
             boxtype="isochrone",
             model=self.tag,
             age=age,
+            s_init=s_init,
             filters_color=filters_color,
             filter_mag=filter_mag,
             color=color,
@@ -809,10 +944,11 @@ class ReadIsochrone:
             masses=masses,
         )
 
-    @typechecked
+    @beartype
     def get_cooling_track(
         self,
-        mass: float,
+        mass: Real,
+        s_init: Optional[Real] = None,
         ages: Optional[np.ndarray] = None,
         filter_mag: Optional[str] = None,
         filters_color: Optional[Tuple[str, str]] = None,
@@ -825,6 +961,11 @@ class ReadIsochrone:
         mass : float
             Mass (:math:`M_\\mathrm{J}`) for which the cooling
             curve will be interpolated.
+        s_init : float, None
+            Initial entropy (k_b/baryon) at which the isochrone
+            data will get interpolated. This parameter is only
+            needed by the ``tag='marleau'`` model and can be
+            set to ``None`` otherwise.
         ages : np.ndarray, None
             Ages (Myr) at which the cooling curve will be
             interpolated. The ages are not interpolated
@@ -856,24 +997,60 @@ class ReadIsochrone:
 
         # Read isochrone data
 
-        (
-            model,
-            iso_age,
-            iso_mass,
-            iso_teff,
-            iso_loglum,
-            iso_logg,
-            iso_radius,
-            iso_mag,
-        ) = self._read_data()
+        iso_data = self.read_data()
 
         if ages is None:
-            idx_min = (np.abs(iso_mass - mass)).argmin()
-            mass_select = iso_mass == iso_mass[idx_min]
-            ages = np.unique(iso_age[mass_select])  # (Myr)
+            if self.regular_grid:
+                ages = iso_data["age"]
+
+            else:
+                idx_min = (np.abs(iso_data["mass"] - mass)).argmin()
+                mass_select = iso_data["mass"] == iso_data["mass"][idx_min]
+                ages = np.unique(iso_data["age"][mass_select])  # (Myr)
+
+                if ages.size < 5:
+                    # This can happen if the age sampling in the
+                    # isochrone grid was different for each mass,
+                    # for example baraffe+2015
+                    ages = np.unique(iso_data["age"])  # (Mjup)
+
+        # Check if initial entropy is provided
+
+        if s_init is None and "s_init" in iso_data:
+            raise ValueError(
+                "The initial entropy is a parameter of the "
+                f"'{self.tag}' model so please set the 's_init' "
+                "parameter."
+            )
+
+        # Create array with grid points
 
         mass_points = np.full(ages.shape[0], mass)  # (Mjup)
-        grid_points = np.column_stack([iso_age, iso_mass])
+
+        if self.regular_grid:
+            grid_points = [iso_data["age"], iso_data["mass"]]
+
+            if "s_init" in iso_data:
+                grid_points.append(iso_data["s_init"])
+
+        else:
+            if "s_init" in iso_data:
+                grid_points = np.column_stack(
+                    [iso_data["age"], iso_data["mass"], iso_data["s_init"]]
+                )
+            else:
+                grid_points = np.column_stack([iso_data["age"], iso_data["mass"]])
+
+        # Parameter values to interpolate the evolutionary tracks
+
+        if "s_init" in iso_data:
+            s_i_points = np.full(ages.shape[0], s_init)  # (k_b/baryon)
+            interp_values = np.column_stack([ages, mass_points, s_i_points])
+
+        else:
+            interp_values = np.column_stack([ages, mass_points])
+
+        # Check if the isochrone table has magnitudes
 
         filters = self.get_filters()
 
@@ -886,75 +1063,154 @@ class ReadIsochrone:
                 index_mag = filters.index(filter_mag)
 
             if filters_color is not None:
-                mag_color_1 = griddata(
-                    points=grid_points,
-                    values=iso_mag[:, index_color_1],
-                    xi=np.stack((ages, mass_points), axis=1),
-                    method="linear",
-                    fill_value="nan",
-                    rescale=False,
-                )
+                if self.regular_grid:
+                    mag_color_1 = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_color_1],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
 
-                mag_color_2 = griddata(
-                    points=grid_points,
-                    values=iso_mag[:, index_color_2],
-                    xi=np.stack((ages, mass_points), axis=1),
-                    method="linear",
-                    fill_value="nan",
-                    rescale=False,
-                )
+                else:
+                    mag_color_1 = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_color_1],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
+
+                if self.regular_grid:
+                    mag_color_2 = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_color_2],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
+
+                else:
+                    mag_color_2 = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_color_2],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
 
                 color = mag_color_1 - mag_color_2
 
             if filter_mag is not None:
-                mag_abs = griddata(
+                if self.regular_grid:
+                    mag_abs = RegularGridInterpolator(
+                        grid_points,
+                        iso_data["mag"][:, index_mag],
+                        method=self.interp_method,
+                        bounds_error=False,
+                        fill_value=np.nan,
+                    )
+
+                else:
+                    mag_abs = griddata(
+                        points=grid_points,
+                        values=iso_data["mag"][:, index_mag],
+                        xi=interp_values,
+                        method="linear",
+                        fill_value="nan",
+                        rescale=False,
+                    )
+
+        if "teff" in iso_data and self.teff_interp is None:
+            if self.regular_grid:
+                self.teff_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["teff"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.teff_interp = grid_interp(
                     points=grid_points,
-                    values=iso_mag[:, index_mag],
-                    xi=np.stack((ages, mass_points), axis=1),
-                    method="linear",
+                    values=iso_data["teff"],
                     fill_value="nan",
                     rescale=False,
                 )
 
-        if self.teff_interp is None:
-            self.teff_interp = grid_interp(
-                points=grid_points,
-                values=iso_teff,
-                fill_value="nan",
-                rescale=False,
-            )
-
-        teff = self.teff_interp(np.stack((ages, mass_points), axis=1))
+        if self.teff_interp is not None:
+            teff = self.teff_interp(interp_values)
+        else:
+            teff = None
 
         if self.loglum_interp is None:
-            self.loglum_interp = grid_interp(
-                points=grid_points,
-                values=iso_loglum,
-                fill_value="nan",
-                rescale=False,
-            )
+            if self.regular_grid:
+                self.loglum_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["log_lum"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
 
-        log_lum = self.loglum_interp(np.stack((ages, mass_points), axis=1))
+            else:
+                self.loglum_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["log_lum"],
+                    fill_value="nan",
+                    rescale=False,
+                )
 
-        if self.logg_interp is None:
-            self.logg_interp = grid_interp(
-                points=grid_points,
-                values=iso_logg,
-                fill_value="nan",
-                rescale=False,
-            )
+        log_lum = self.loglum_interp(interp_values)
 
-        logg = self.logg_interp(np.stack((ages, mass_points), axis=1))
+        if "log_g" in iso_data and self.logg_interp is None:
+            if self.regular_grid:
+                self.logg_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["log_g"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
 
-        if self.radius_interp is None:
-            self.radius_interp = grid_interp(
-                points=grid_points,
-                values=iso_radius,
-                fill_value="nan",
-                rescale=False,
-            )
+            else:
+                self.logg_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["log_g"],
+                    fill_value="nan",
+                    rescale=False,
+                )
 
-        radius = self.radius_interp(np.stack((ages, mass_points), axis=1))
+        if self.logg_interp is not None:
+            logg = self.logg_interp(interp_values)
+        else:
+            logg = None
+
+        if "radius" in iso_data and self.radius_interp is None:
+            if self.regular_grid:
+                self.radius_interp = RegularGridInterpolator(
+                    grid_points,
+                    iso_data["radius"],
+                    method=self.interp_method,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+
+            else:
+                self.radius_interp = grid_interp(
+                    points=grid_points,
+                    values=iso_data["radius"],
+                    fill_value="nan",
+                    rescale=False,
+                )
+
+        if self.radius_interp is not None:
+            radius = self.radius_interp(interp_values)
+        else:
+            radius = None
 
         if mag_abs is None and filter_mag is not None:
             warnings.warn(
@@ -978,6 +1234,7 @@ class ReadIsochrone:
             boxtype="cooling",
             model=self.tag,
             mass=mass,
+            s_init=s_init,
             filters_color=filters_color,
             filter_mag=filter_mag,
             color=color,
@@ -989,16 +1246,16 @@ class ReadIsochrone:
             radius=radius,
         )
 
-    @typechecked
+    @beartype
     def get_color_magnitude(
         self,
-        age: float,
+        age: Real,
         masses: Optional[np.ndarray],
         filters_color: Tuple[str, str],
         filter_mag: str,
         adapt_logg: bool = False,
         atmospheric_model: Optional[str] = None,
-        extra_param: Optional[Dict[str, float]] = None,
+        extra_param: Optional[Dict[str, Real]] = None,
     ) -> ColorMagBox:
         """
         Function for calculating color-magnitude pairs
@@ -1183,16 +1440,17 @@ class ReadIsochrone:
             mass=isochrone.mass,
             radius=isochrone.radius,
             iso_tag=self.tag,
+            age=age,
         )
 
-    @typechecked
+    @beartype
     def get_color_color(
         self,
-        age: float,
+        age: Real,
         masses: Optional[np.ndarray],
         filters_colors: Tuple[Tuple[str, str], Tuple[str, str]],
         atmospheric_model: Optional[str] = None,
-        extra_param: Optional[Dict[str, float]] = None,
+        extra_param: Optional[Dict[str, Real]] = None,
     ) -> ColorColorBox:
         """
         Function for calculating color-color pairs
@@ -1346,12 +1604,13 @@ class ReadIsochrone:
             mass=isochrone.mass,
             radius=isochrone.radius,
             iso_tag=self.tag,
+            age=age,
         )
 
-    @typechecked
+    @beartype
     def get_mass(
         self,
-        age: float,
+        age: Real,
         log_lum: np.ndarray,
     ) -> np.ndarray:
         """
@@ -1381,37 +1640,43 @@ class ReadIsochrone:
 
         # Read isochrone data
 
-        (
-            _,
-            iso_age,
-            iso_mass,
-            _,
-            iso_loglum,
-            _,
-            _,
-            _,
-        ) = self._read_data()
+        iso_data = self.read_data()
 
-        # Interpolate masses
+        # Check for a regular grid
 
-        grid_points = np.stack((iso_age, iso_loglum), axis=1)
+        if self.regular_grid:
+            # Using a regular grid is not possible because
+            # log_lum is not part of the regular grid points
+
+            raise NotImplementedError(
+                f"The 'get_mass()' method does not support the '{self.tag}' model."
+            )
+
+        # Create array with grid points
+
+        grid_points = np.column_stack([iso_data["age"], iso_data["log_lum"]])
+
+        # Parameter values to interpolate the evolutionary tracks
 
         age_points = np.full(log_lum.size, age)  # (Myr)
+        interp_values = np.column_stack([age_points, log_lum])
+
+        # Interpolate masses
 
         if self.mass_interp is None:
             self.mass_interp = grid_interp(
                 points=grid_points,
-                values=iso_mass,
+                values=iso_data["mass"],
                 fill_value="nan",
                 rescale=False,
             )
 
-        return self.mass_interp(np.stack((age_points, log_lum), axis=1))
+        return self.mass_interp(interp_values)
 
-    @typechecked
+    @beartype
     def get_radius(
         self,
-        age: float,
+        age: Real,
         log_lum: np.ndarray,
     ) -> np.ndarray:
         """
@@ -1441,34 +1706,40 @@ class ReadIsochrone:
 
         # Read isochrone data
 
-        (
-            _,
-            iso_age,
-            _,
-            _,
-            iso_loglum,
-            _,
-            iso_radius,
-            _,
-        ) = self._read_data()
+        iso_data = self.read_data()
 
-        # Interpolate radius
+        # Check for a regular grid
 
-        grid_points = np.stack((iso_age, iso_loglum), axis=1)
+        if self.regular_grid:
+            # Using a regular grid is not possible because
+            # log_lum is not part of the regular grid points
+
+            raise NotImplementedError(
+                f"The 'get_radius()' method does not support the '{self.tag}' model."
+            )
+
+        # Create array with grid points
+
+        grid_points = np.column_stack([iso_data["age"], iso_data["log_lum"]])
+
+        # Parameter values to interpolate the evolutionary tracks
 
         age_points = np.full(log_lum.size, age)  # (Myr)
+        interp_values = np.column_stack([age_points, log_lum])
+
+        # Interpolate radii
 
         if self.radius_interp is None:
             self.radius_interp = grid_interp(
                 points=grid_points,
-                values=iso_radius,
+                values=iso_data["radius"],
                 fill_value="nan",
                 rescale=False,
             )
 
-        return self.radius_interp(np.stack((age_points, log_lum), axis=1))
+        return self.radius_interp(interp_values)
 
-    @typechecked
+    @beartype
     def get_filters(self) -> Optional[List[str]]:
         """
         Function for get a list with filter names for which there
@@ -1496,15 +1767,15 @@ class ReadIsochrone:
 
         return filters
 
-    @typechecked
+    @beartype
     def get_photometry(
         self,
-        age: float,
-        mass: float,
-        distance: float,
+        age: Real,
+        mass: Real,
+        distance: Real,
         filter_name: str,
         atmospheric_model: Optional[str] = None,
-        extra_param: Optional[Dict[str, float]] = None,
+        extra_param: Optional[Dict[str, Real]] = None,
     ) -> PhotometryBox:
         """
         Function for computing synthetic photometry by interpolating
@@ -1590,16 +1861,16 @@ class ReadIsochrone:
 
         return phot_box
 
-    @typechecked
+    @beartype
     def get_spectrum(
         self,
-        age: float,
-        mass: float,
-        distance: float,
-        wavel_range: Optional[Tuple[float, float]] = None,
-        spec_res: Optional[float] = None,
+        age: Real,
+        mass: Real,
+        distance: Real,
+        wavel_range: Optional[Tuple[Real, Real]] = None,
+        spec_res: Optional[Real] = None,
         atmospheric_model: Optional[str] = None,
-        extra_param: Optional[Dict[str, float]] = None,
+        extra_param: Optional[Dict[str, Real]] = None,
     ) -> ModelBox:
         """
         Function for interpolating the model spectrum at a specified
@@ -1684,17 +1955,17 @@ class ReadIsochrone:
 
         return model_box
 
-    @typechecked
+    @beartype
     def contrast_to_mass(
         self,
-        age: float,
-        distance: float,
+        age: Real,
+        distance: Real,
         filter_name: str,
-        star_mag: float,
-        contrast: Union[List[float], np.ndarray],
+        star_mag: Real,
+        contrast: Union[List[Real], np.ndarray],
         use_mag: bool = True,
         atmospheric_model: Optional[str] = None,
-        extra_param: Optional[Dict[str, float]] = None,
+        extra_param: Optional[Dict[str, Real]] = None,
         calc_phot: bool = False,
     ) -> np.ndarray:
         """
@@ -1820,7 +2091,7 @@ class ReadIsochrone:
 
         filter_list = self.get_filters()
 
-        if filter_name in filter_list and not calc_phot:
+        if filter_list is not None and filter_name in filter_list and not calc_phot:
             print(
                 f"The '{filter_name}' filter is found in the list "
                 "of available filters from the isochrone data of "
@@ -1841,7 +2112,7 @@ class ReadIsochrone:
             )
 
         else:
-            if filter_name not in filter_list:
+            if filter_list is not None and filter_name not in filter_list:
                 print(
                     f"The '{filter_name}' filter is not found in the "
                     "list of available filters from the isochrone "

@@ -1,16 +1,22 @@
+"""
+Module with a function for adding the Linder et al. (2019)
+evolutionary tracks to the database.
+"""
+
+from requests.exceptions import HTTPError, SSLError
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pooch
 
-from typeguard import typechecked
+from beartype import beartype
 
 from species.core import constants
 from species.util.data_util import extract_tarfile, remove_directory
 
 
-@typechecked
+@beartype
 def add_linder2019(database: h5py._hl.files.File, input_path: str) -> None:
     """
     Function for adding the `Linder et al. (2019)
@@ -81,20 +87,35 @@ def add_linder2019(database: h5py._hl.files.File, input_path: str) -> None:
 
     data_folder.mkdir()
 
-    url = "https://cdsarc.u-strasbg.fr/viz-bin/nph-Cat/tar.gz?J/A+A/623/A85"
     input_file = "J_A+A_623_A85.tar.gz"
     data_file = Path(input_path) / input_file
 
     if not data_file.exists():
         print()
 
-        pooch.retrieve(
-            url=url,
-            known_hash=None,
-            fname=input_file,
-            path=input_path,
-            progressbar=True,
-        )
+        try:
+            url = "https://cdsarc.u-strasbg.fr/viz-bin/nph-Cat/tar.gz?J/A+A/623/A85"
+
+            pooch.retrieve(
+                url=url,
+                known_hash=None,
+                fname=input_file,
+                path=input_path,
+                progressbar=True,
+            )
+
+        except (HTTPError, SSLError):
+            url = (
+                "https://home.strw.leidenuniv.nl/~stolker/species/J_A+A_623_A85.tar.gz"
+            )
+
+            pooch.retrieve(
+                url=url,
+                known_hash="83bbc673a10207838983e0155ec21915caedd6465d6926fba23675562797923d",
+                fname=input_file,
+                path=input_path,
+                progressbar=True,
+            )
 
     print("\nUnpacking Linder et al. (2019) isochrones (536 kB)...", end="", flush=True)
     extract_tarfile(str(data_file), str(data_folder))
